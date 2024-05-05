@@ -8,7 +8,7 @@ import { createCanvas } from '@/utils';
 
 const boxElementRef = ref(null);
 
-const mountCanvas = () => {
+const createAndMountCanvas = () => {
   const boxElement = boxElementRef.value;
   const boundingRect = boxElement.getBoundingClientRect();
   const canvasElement = createCanvas(boundingRect.width, boundingRect.height);
@@ -19,6 +19,15 @@ const mountCanvas = () => {
 };
 
 onMounted(() => {
-  mountCanvas();
+  const { canvas } = createAndMountCanvas();
+
+  const gl = canvas.getContext('webgl');
+  if (!gl) {
+    throw new Error('WebGL not supported');
+  }
+
+  setTimeout(() => {
+    alert('获取WebGL Context成功，当前浏览器支持WebGL');
+  }, 1000);
 });
 </script>
