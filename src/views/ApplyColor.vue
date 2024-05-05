@@ -19,18 +19,30 @@ const createAndMountCanvas = () => {
   return { canvas: canvasElement, bounds: boundingRect };
 };
 
+class BufferAttribute {
+  constructor(data, count) {
+    this.data = data;
+    this.count = count;
+  }
+}
+
 class Geometry {
-  constructor(config) {
-    this.positions = config.positions;
+  constructor() {
+    this.attributes = {};
+  }
+  setAttribute(attr, value) {
+    if (!['aPosition', 'aColor'].includes(attr)) {
+      throw new Error('An error occurred setAttribute');
+    }
+    this.attributes[attr] = value;
   }
   init(gl) {
-    const positionsBuffer = this.createBuffer(
-      gl,
-      new Float32Array(this.positions)
-    );
-    this.buffers = {
-      aPosition: positionsBuffer,
-    };
+    const attributes = this.attributes;
+    const buffers = {};
+    for (const [key, value] of Object.entries(attributes)) {
+      buffers[key] = this.createBuffer(gl, value.data);
+    }
+    this.buffers = buffers;
   }
   createBuffer(gl, data) {
     // 创建WebGL缓冲对象
@@ -121,14 +133,15 @@ class Mesh {
   setAttributes(gl) {
     const { shader, geometry } = this;
     const program = shader.program;
-    const bufferKeys = Object.entries(geometry.buffers);
-    for (const [key, buffer] of bufferKeys) {
-      const location = gl.getAttribLocation(program, key);
+    const { attributes, buffers } = geometry;
+    for (const [attr, buffer] of Object.entries(buffers)) {
+      const { count } = attributes[attr];
+      const location = gl.getAttribLocation(program, attr);
       // 绑定缓冲区位置
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       // 告诉显卡从当前绑定的缓冲区（bindBuffer() 指定的缓冲区）中读取顶点数据
-      // 每个顶点属性的组成数量，必须是1、2、3、4，下面定义是指按照每2个数据的数量区分不同的顶点
-      gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
+      // 每个顶点属性的组成数量，必须是1、2、3、4
+      gl.vertexAttribPointer(location, count, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(location);
     }
   }
@@ -217,22 +230,37 @@ onMounted(() => {
   const { canvas } = createAndMountCanvas();
 
   const renderer = new WebGLRenderer({ canvas });
+
+  const geometry = new Geometry();
+  const positions = new Float32Array([
+    1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0,
+  ]);
+  const colors = new Float32Array([
+    1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+  ]);
+  geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
+  geometry.setAttribute('aColor', new BufferAttribute(colors, 3));
+
   const mesh = new Mesh({
-    geometry: new Geometry({
-      positions: [1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0],
-    }),
+    geometry,
     shader: new Shader({
       vertex: `
-        attribute vec4 aPosition;
+        precision mediump float;
+        attribute vec3 aPosition;
+        attribute vec3 aColor;
         uniform mat4 uModelViewMatrix;
         uniform mat4 uProjectionMatrix;
+        varying vec3 vColor;
         void main() {
-          gl_Position = uProjectionMatrix * uModelViewMatrix * aPosition;
+          vColor = aColor;
+          gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
         }
       `,
       fragment: `
+        precision mediump float;
+        varying vec3 vColor;
         void main() {
-          gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+          gl_FragColor = vec4(vColor, 1.0);
         }
       `,
     }),
