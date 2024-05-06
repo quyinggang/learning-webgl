@@ -14,4 +14,14 @@ export default [
     title: '位置与旋转',
     componentName: 'PositionRotation',
   },
+  {
+    path: '/index',
+    title: '顶点索引',
+    componentName: 'ElementIndex',
+  },
+  {
+    path: '/box',
+    title: '绘制正方体',
+    componentName: 'BoxMesh',
+  },
 ];
