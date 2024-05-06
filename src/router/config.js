@@ -9,4 +9,9 @@ export default [
     title: '应用顶点颜色',
     componentName: 'ApplyColor',
   },
+  {
+    path: '/rotate',
+    title: '位置与旋转',
+    componentName: 'PositionRotation',
+  },
 ];

@@ -84,11 +84,12 @@ class Shader {
     // 链接着色程序，从而完成为程序的片元和顶点着色器准备GPU代码的过程
     gl.linkProgram(program);
 
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error('Unable to initialize the shader program');
+    const success = gl.getProgramParameter(program, gl.LINK_STATUS);
+    if (success) {
+      return program;
     }
-
-    return program;
+    gl.deleteProgram(program);
+    throw new Error('Unable to initialize the shader program');
   }
   createShader(gl, type, source) {
     // 创建一个新的着色器
@@ -99,12 +100,13 @@ class Shader {
     gl.compileShader(shader);
 
     // 检查是否编译成功
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      gl.deleteShader(shader);
-      throw new Error(`An error occurred compiling the shaders`);
+    const success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+    if (success) {
+      return shader;
     }
 
-    return shader;
+    gl.deleteShader(shader);
+    throw new Error(`An error occurred compiling the shaders`);
   }
 }
 
@@ -185,7 +187,8 @@ class WebGLRenderer {
     return projectionMatrix;
   }
   preRender() {
-    const gl = this.gl;
+    const { gl, canvas } = this;
+    gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
     // 设置深度缓冲区的深度清除值，值的范围是 0 到 1

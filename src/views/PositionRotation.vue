@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { mat4 } from 'gl-matrix';
 import { createCanvas } from '@/utils';
 
@@ -19,18 +19,83 @@ const createAndMountCanvas = () => {
   return { canvas: canvasElement, bounds: boundingRect };
 };
 
+class Vector3 {
+  constructor(x = 0, y = 0, z = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  set(x, y, z) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+}
+
+class Object3D {
+  constructor() {
+    this.position = new Vector3();
+    this.rotation = 0.0;
+    this.rotationAxis = new Vector3(0, 0, 1);
+    // 模型视图矩阵
+    this.modelViewMatrix = mat4.create();
+  }
+  rotateX(rotation) {
+    this.rotation = rotation;
+    this.rotationAxis = new Vector3(1, 0, 0);
+  }
+  rotateY(rotation) {
+    this.rotation = rotation;
+    this.rotationAxis = new Vector3(0, 1, 0);
+  }
+  rotateZ(rotation) {
+    this.rotation = rotation;
+    this.rotationAxis = new Vector3(0, 0, 1);
+  }
+  updateModelViewMatrix() {
+    const { position, rotation, rotationAxis } = this;
+    // 模型视图矩阵
+    const modelViewMatrix = mat4.create();
+    // 设置物体的位置坐标
+    mat4.translate(modelViewMatrix, modelViewMatrix, [
+      position.x,
+      position.y,
+      position.z,
+    ]);
+    // 设置物体旋转
+    mat4.rotate(modelViewMatrix, modelViewMatrix, rotation, [
+      rotationAxis.x,
+      rotationAxis.y,
+      rotationAxis.z,
+    ]);
+    this.modelViewMatrix = modelViewMatrix;
+  }
+}
+
+class BufferAttribute {
+  constructor(data, count) {
+    this.data = data;
+    this.count = count;
+  }
+}
+
 class Geometry {
-  constructor(config) {
-    this.positions = config.positions;
+  constructor() {
+    this.attributes = {};
+  }
+  setAttribute(attr, value) {
+    if (!['aPosition', 'aColor'].includes(attr)) {
+      throw new Error('An error occurred setAttribute');
+    }
+    this.attributes[attr] = value;
   }
   init(gl) {
-    const positionsBuffer = this.createBuffer(
-      gl,
-      new Float32Array(this.positions)
-    );
-    this.buffers = {
-      aPosition: positionsBuffer,
-    };
+    const attributes = this.attributes;
+    const buffers = {};
+    for (const [key, value] of Object.entries(attributes)) {
+      buffers[key] = this.createBuffer(gl, value.data);
+    }
+    this.buffers = buffers;
   }
   createBuffer(gl, data) {
     // 创建WebGL缓冲对象
@@ -80,11 +145,11 @@ class Shader {
     throw new Error('Unable to initialize the shader program');
   }
   createShader(gl, type, source) {
-    // 创建一个新的着色器对象
+    // 创建一个新的着色器
     const shader = gl.createShader(type);
-    // 提供代码源
+    // 将源代码发送给源代码
     gl.shaderSource(shader, source);
-    // 编译生成着色器
+    // 着色器编译源代码
     gl.compileShader(shader);
 
     // 检查是否编译成功
@@ -98,57 +163,63 @@ class Shader {
   }
 }
 
-class Mesh {
+class Mesh extends Object3D {
   constructor(config) {
+    super();
     this.geometry = config.geometry;
     this.shader = config.shader;
-    // 模型视图矩阵
-    this.modelViewMatrix = mat4.create();
   }
-  render(gl, data) {
-    const { shader, geometry, modelViewMatrix } = this;
-
+  init(gl) {
+    const { shader, geometry } = this;
     shader.init(gl);
     geometry.init(gl);
 
-    // 设置物体的位置坐标(x, y, z)
-    mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -6.0]);
-
-    // 设置shader attributes数据
-    this.setAttributes(gl);
-    gl.useProgram(shader.program);
-    // 设置shader uniforms数据
-    this.setUniforms(gl, data);
-  }
-  setAttributes(gl) {
-    const { shader, geometry } = this;
+    const attributeInfo = {};
     const program = shader.program;
-    const bufferKeys = Object.entries(geometry.buffers);
-    for (const [key, buffer] of bufferKeys) {
-      const location = gl.getAttribLocation(program, key);
+    const { buffers, attributes } = geometry;
+    for (const [attr, buffer] of Object.entries(buffers)) {
+      const { count } = attributes[attr];
+      const location = gl.getAttribLocation(program, attr);
+      attributeInfo[attr] = {
+        count,
+        buffer,
+        location,
+      };
+    }
+    this.programInfo = {
+      attributeInfo,
+      uniformInfo: {
+        uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
+        uModelViewMatrix: gl.getUniformLocation(program, 'uModelViewMatrix'),
+      },
+    };
+  }
+  render(gl, data) {
+    gl.useProgram(this.shader.program);
+    // 设置shader attributes数据
+    this.updateAttributes(gl);
+    // 设置shader uniforms数据
+    this.updateUniforms(gl, data);
+  }
+  updateAttributes(gl) {
+    const { attributeInfo } = this.programInfo;
+    for (const value of Object.values(attributeInfo)) {
+      const { count, location, buffer } = value;
       // 绑定缓冲区位置
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       // 告诉显卡从当前绑定的缓冲区（bindBuffer() 指定的缓冲区）中读取顶点数据
-      // 每个顶点属性的组成数量，必须是1、2、3、4，下面定义是指按照每2个数据的数量区分不同的顶点
-      gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
+      // 每个顶点属性的组成数量，必须是1、2、3、4
+      gl.vertexAttribPointer(location, count, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(location);
     }
   }
-  setUniforms(gl, data) {
-    const { modelViewMatrix, shader } = this;
+  updateUniforms(gl, data) {
+    const { uniformInfo } = this.programInfo;
     const { projectionMatrix } = data;
-    const program = shader.program;
+    const modelViewMatrix = this.modelViewMatrix;
 
-    gl.uniformMatrix4fv(
-      gl.getUniformLocation(program, 'uProjectionMatrix'),
-      false,
-      projectionMatrix
-    );
-    gl.uniformMatrix4fv(
-      gl.getUniformLocation(program, 'uModelViewMatrix'),
-      false,
-      modelViewMatrix
-    );
+    gl.uniformMatrix4fv(uniformInfo.uProjectionMatrix, false, projectionMatrix);
+    gl.uniformMatrix4fv(uniformInfo.uModelViewMatrix, false, modelViewMatrix);
   }
 }
 
@@ -161,6 +232,7 @@ class WebGLRenderer {
     if (!gl) {
       throw new Error('WebGL not supported');
     }
+    this.projectionMatrix = this.createProjectMatrix();
   }
   createProjectMatrix() {
     const canvas = this.canvas;
@@ -173,7 +245,7 @@ class WebGLRenderer {
 
     return projectionMatrix;
   }
-  preRender() {
+  renderStart() {
     const { gl, canvas } = this;
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
@@ -200,10 +272,7 @@ class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
   renderScene(mesh) {
-    const { gl } = this;
-    // 创建投影矩阵
-    const projectionMatrix = this.createProjectMatrix();
-
+    const { gl, projectionMatrix } = this;
     mesh.render(gl, { projectionMatrix });
 
     // drawArrays表示从向量数组中绘制图元
@@ -211,35 +280,67 @@ class WebGLRenderer {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
   render(mesh) {
-    this.preRender();
+    this.renderStart();
     this.renderScene(mesh);
   }
 }
 
-onMounted(() => {
-  const { canvas } = createAndMountCanvas();
+const createMesh = (gl) => {
+  const geometry = new Geometry();
+  const positions = new Float32Array([
+    1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0,
+  ]);
+  const colors = new Float32Array([
+    1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+  ]);
+  geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
+  geometry.setAttribute('aColor', new BufferAttribute(colors, 3));
 
-  const renderer = new WebGLRenderer({ canvas });
   const mesh = new Mesh({
-    geometry: new Geometry({
-      positions: [1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0],
-    }),
+    geometry,
     shader: new Shader({
       vertex: `
-        attribute vec4 aPosition;
+        precision mediump float;
+        attribute vec3 aPosition;
+        attribute vec3 aColor;
         uniform mat4 uModelViewMatrix;
         uniform mat4 uProjectionMatrix;
+        varying vec3 vColor;
         void main() {
-          gl_Position = uProjectionMatrix * uModelViewMatrix * aPosition;
+          vColor = aColor;
+          gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
         }
       `,
       fragment: `
+        precision mediump float;
+        varying vec3 vColor;
         void main() {
-          gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+          gl_FragColor = vec4(vColor, 1.0);
         }
       `,
     }),
   });
-  renderer.render(mesh);
+
+  mesh.init(gl);
+
+  return mesh;
+};
+
+onMounted(() => {
+  let raf = null;
+  const { canvas } = createAndMountCanvas();
+  const renderer = new WebGLRenderer({ canvas });
+  const mesh = createMesh(renderer.gl);
+  const animate = () => {
+    mesh.position.set(0.0, 0.0, -6);
+    mesh.rotateZ(mesh.rotation + 0.01);
+    mesh.updateModelViewMatrix();
+    renderer.render(mesh);
+
+    raf = window.requestAnimationFrame(animate);
+  };
+  animate();
+
+  onBeforeUnmount(() => window.cancelAnimationFrame(raf));
 });
 </script>
