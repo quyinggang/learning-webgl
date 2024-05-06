@@ -24,4 +24,9 @@ export default [
     title: '绘制正方体',
     componentName: 'BoxMesh',
   },
+  {
+    path: '/camera',
+    title: '应用纹理',
+    componentName: 'ApplyTexture',
+  },
 ];

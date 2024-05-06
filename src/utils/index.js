@@ -58,3 +58,7 @@ export const createCanvas = (width, height) => {
 
   return canvas;
 };
+
+export const isPowerOf2 = (value) => {
+  return (value & (value - 1)) === 0;
+};

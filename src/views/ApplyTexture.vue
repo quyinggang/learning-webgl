@@ -5,7 +5,8 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { mat4 } from 'gl-matrix';
-import { createCanvas } from '@/utils';
+import { createCanvas, loadImage, isPowerOf2 } from '@/utils';
+import GMImage from '@/assets/gm.jpg';
 
 const boxElementRef = ref(null);
 
@@ -85,7 +86,7 @@ class Geometry {
     this.vertexCount = 0;
   }
   setAttribute(attr, value) {
-    if (!['aPosition', 'aColor'].includes(attr)) {
+    if (!['aPosition', 'aColor', 'aUV'].includes(attr)) {
       throw new Error('An error occurred setAttribute');
     }
     this.attributes[attr] = value;
@@ -94,7 +95,11 @@ class Geometry {
     this.indices = indices;
     this.vertexCount = indices.length;
   }
-  init(gl) {
+  init(gl, program) {
+    this.processBuffers(gl);
+    this.processVertexAttrib(gl, program);
+  }
+  processBuffers(gl) {
     const attributes = this.attributes;
     const buffers = {};
     const ARRAY_BUFFER = gl.ARRAY_BUFFER;
@@ -105,7 +110,9 @@ class Geometry {
       }
       buffers[key] = this.createBuffer(gl, ARRAY_BUFFER, value.data);
     }
+    this.buffers = buffers;
 
+    // 创建索引缓冲
     const indices = this.indices;
     const isExistIndex = indices && indices.length > 0;
     if (isExistIndex) {
@@ -115,8 +122,21 @@ class Geometry {
         indices
       );
     }
-    this.buffers = buffers;
     this.vertexCount = isExistIndex ? indices.length : vertexCount;
+  }
+  processVertexAttrib(gl, program) {
+    const { buffers, attributes } = this;
+    const attributeInfo = {};
+    for (const [attr, buffer] of Object.entries(buffers)) {
+      const { count } = attributes[attr];
+      const location = gl.getAttribLocation(program, attr);
+      attributeInfo[attr] = {
+        count,
+        buffer,
+        location,
+      };
+    }
+    this.vertexAttributesInfo = attributeInfo;
   }
   createBuffer(gl, type, data) {
     // 创建WebGL缓冲对象
@@ -137,10 +157,46 @@ class Shader {
   constructor(config) {
     this.vertexSource = config.vertex;
     this.fragmentSource = config.fragment;
+    this.resources = config.resources;
   }
   init(gl) {
-    const program = this.createProgram(gl);
-    this.program = program;
+    this.program = this.createProgram(gl);
+    this.processResources(gl);
+    // 浏览器会从加载的图像中按从左上角开始的自上而下顺序复制像素，而WebGL需要按自下而上的顺序——从左下角开始的像素顺序
+    // 下面设置是防止渲染时图像纹理方向错误
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  }
+  processResources(gl) {
+    const { program, resources } = this;
+    const customUniforms = {};
+    for (const [attr, data] of Object.entries(resources)) {
+      const location = gl.getUniformLocation(program, attr);
+      const result = { location, type: data.type, value: data.value };
+      if (data.type === 'texture') {
+        const texture = this.createTexture(gl, data.value);
+        result.value = texture;
+      }
+      customUniforms[attr] = result;
+    }
+    this.uniformsInfo = customUniforms;
+  }
+  createTexture(gl, image) {
+    // 创建WebGL纹理对象
+    const texture = gl.createTexture();
+    // 绑定给定的纹理到目标
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    // 指定纹理的数据源
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    // 对于宽高两个维度上是否为2的幂来设置纹理的过滤（filter）和平铺（wrap）
+    if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+      gl.generateMipmap(gl.TEXTURE_2D);
+    } else {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    }
+
+    return texture;
   }
   createProgram(gl) {
     const { vertexSource, fragmentSource } = this;
@@ -191,32 +247,18 @@ class Mesh extends Object3D {
     this.shader = config.shader;
     this.isDrawElements = false;
   }
+
   init(gl) {
     const { shader, geometry } = this;
     shader.init(gl);
-    geometry.init(gl);
+    geometry.init(gl, shader.program);
 
-    this.isDrawElements = !!geometry.indexBuffer;
-
-    const attributeInfo = {};
     const program = shader.program;
-    const { buffers, attributes } = geometry;
-    for (const [attr, buffer] of Object.entries(buffers)) {
-      const { count } = attributes[attr];
-      const location = gl.getAttribLocation(program, attr);
-      attributeInfo[attr] = {
-        count,
-        buffer,
-        location,
-      };
-    }
-    this.programInfo = {
-      attributeInfo,
-      uniformInfo: {
-        uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
-        uModelViewMatrix: gl.getUniformLocation(program, 'uModelViewMatrix'),
-      },
+    this.defaultUniforms = {
+      uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
+      uModelViewMatrix: gl.getUniformLocation(program, 'uModelViewMatrix'),
     };
+    this.isDrawElements = !!geometry.indexBuffer;
   }
   render(gl, data) {
     gl.useProgram(this.shader.program);
@@ -226,9 +268,8 @@ class Mesh extends Object3D {
     this.updateUniforms(gl, data);
   }
   updateAttributes(gl) {
-    const geometry = this.geometry;
-    const { attributeInfo } = this.programInfo;
-    for (const value of Object.values(attributeInfo)) {
+    const { indexBuffer, vertexAttributesInfo } = this.geometry;
+    for (const value of Object.values(vertexAttributesInfo)) {
       const { count, location, buffer } = value;
       // 绑定缓冲区位置
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -237,18 +278,37 @@ class Mesh extends Object3D {
       gl.vertexAttribPointer(location, count, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(location);
     }
-    const indexBuffer = geometry.indexBuffer;
     if (indexBuffer) {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     }
   }
   updateUniforms(gl, data) {
-    const { uniformInfo } = this.programInfo;
     const { projectionMatrix } = data;
     const modelViewMatrix = this.modelViewMatrix;
+    const defaultUniforms = this.defaultUniforms;
+    const uniformsInfo = this.shader.uniformsInfo;
 
-    gl.uniformMatrix4fv(uniformInfo.uProjectionMatrix, false, projectionMatrix);
-    gl.uniformMatrix4fv(uniformInfo.uModelViewMatrix, false, modelViewMatrix);
+    gl.uniformMatrix4fv(
+      defaultUniforms.uProjectionMatrix,
+      false,
+      projectionMatrix
+    );
+    gl.uniformMatrix4fv(
+      defaultUniforms.uModelViewMatrix,
+      false,
+      modelViewMatrix
+    );
+
+    const valueList = Object.values(uniformsInfo);
+    if (Array.isArray(valueList) && valueList.length > 0) {
+      for (const item of valueList) {
+        if (item.type === 'texture') {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, item.value);
+          gl.uniform1i(item.location, 0);
+        }
+      }
+    }
   }
 }
 
@@ -322,44 +382,62 @@ class WebGLRenderer {
   }
 }
 
-const createBox = (gl) => {
+const createBox = async (gl) => {
   const geometry = new Geometry();
-  // 每3个顶点构成一个三角形，正方体有6个面，1个面需要6个顶点从而组成两个三角形
-  // 这种方式存在很多冗余数据，推荐使用顶点索引实现
   const positions = new Float32Array([
-    // 正面
-    -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0,
-    1.0, -1.0, -1.0, 1.0,
+    // Front face
+    -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
 
-    // 背面
-    -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0,
-    1.0, -1.0, -1.0, -1.0, -1.0,
+    // Back face
+    -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0,
 
-    // 顶部
-    -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-    -1.0, -1.0, 1.0, -1.0,
+    // Top face
+    -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0,
 
-    // 底部
-    -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0,
-    -1.0, 1.0, -1.0, -1.0, -1.0,
+    // Bottom face
+    -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0,
 
-    // 右侧
-    1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0,
-    1.0, 1.0, -1.0, -1.0,
+    // Right face
+    1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0,
 
-    // 左侧
-    -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, -1.0,
-    1.0, -1.0, -1.0, -1.0, -1.0,
+    // Left face
+    -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0,
   ]);
-  const colorArray = [];
-  const count = positions.length;
-  for (let index = 0; index < count; index++) {
-    const value = Number(Math.random().toPrecision(1));
-    colorArray.push(value);
-  }
-  const colors = new Float32Array(colorArray);
+  const indices = new Uint16Array([
+    0, 1, 2, 2, 3, 0,
+
+    4, 5, 6, 6, 7, 4,
+
+    8, 9, 10, 10, 11, 8,
+
+    12, 13, 14, 14, 15, 12,
+
+    16, 17, 18, 18, 19, 16,
+
+    20, 21, 22, 22, 23, 20,
+  ]);
+
+  // 纹理坐标是0.0 ～ 1.0范围的，定义uvs需要与顶点一一对应
+  const uvs = new Float32Array([
+    // Front
+    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+    // Back
+    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+    // Top
+    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+    // Bottom
+    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+    // Right
+    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+    // Left
+    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+  ]);
+
   geometry.setAttribute('aPosition', new BufferAttribute(positions, 3));
-  geometry.setAttribute('aColor', new BufferAttribute(colors, 3));
+  geometry.setAttribute('aUV', new BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+
+  const image = await loadImage(GMImage);
 
   const mesh = new Mesh({
     geometry,
@@ -367,22 +445,27 @@ const createBox = (gl) => {
       vertex: `
         precision mediump float;
         attribute vec3 aPosition;
-        attribute vec3 aColor;
+        attribute vec2 aUV;
         uniform mat4 uModelViewMatrix;
         uniform mat4 uProjectionMatrix;
-        varying vec3 vColor;
+        varying vec2 vUV;
         void main() {
-          vColor = aColor;
+          vUV = aUV;
           gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
         }
       `,
       fragment: `
         precision mediump float;
-        varying vec3 vColor;
+        uniform sampler2D uTexture;
+        varying vec2 vUV;
+
         void main() {
-          gl_FragColor = vec4(vColor, 1.0);
+          gl_FragColor = texture2D(uTexture, vUV);
         }
       `,
+      resources: {
+        uTexture: { type: 'texture', value: image },
+      },
     }),
   });
 
@@ -395,17 +478,18 @@ onMounted(() => {
   let raf = null;
   const { canvas } = createAndMountCanvas();
   const renderer = new WebGLRenderer({ canvas });
-  const mesh = createBox(renderer.gl);
-  mesh.position.set(0.0, 0.0, -6);
+  createBox(renderer.gl).then((mesh) => {
+    mesh.position.set(0.0, 0.0, -6.0);
 
-  const animate = () => {
-    mesh.rotateY(mesh.rotation + 0.01);
-    mesh.updateModelViewMatrix();
-    renderer.render(mesh);
-    raf = window.requestAnimationFrame(animate);
-  };
+    const animate = () => {
+      mesh.rotateY(mesh.rotation + 0.01);
+      mesh.updateModelViewMatrix();
+      renderer.render(mesh);
+      raf = window.requestAnimationFrame(animate);
+    };
 
-  animate();
+    animate();
+  });
 
   onBeforeUnmount(() => window.cancelAnimationFrame(raf));
 });
