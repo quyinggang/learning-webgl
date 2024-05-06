@@ -1,8 +1,8 @@
 export default [
   {
-    path: '/scene',
-    title: '简单场景',
-    componentName: 'SimpleScene',
+    path: '/model',
+    title: '模型坐标',
+    componentName: 'ModelCoord',
   },
   {
     path: '/color',
@@ -25,7 +25,7 @@ export default [
     componentName: 'BoxMesh',
   },
   {
-    path: '/camera',
+    path: '/texture',
     title: '应用纹理',
     componentName: 'ApplyTexture',
   },

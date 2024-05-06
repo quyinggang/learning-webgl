@@ -4,7 +4,6 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { mat4 } from 'gl-matrix';
 import { createCanvas } from '@/utils';
 
 const boxElementRef = ref(null);
@@ -19,20 +18,61 @@ const createAndMountCanvas = () => {
   return { canvas: canvasElement, bounds: boundingRect };
 };
 
+class BufferAttribute {
+  constructor(data, count) {
+    this.data = data;
+    this.count = count;
+  }
+}
+
 class Geometry {
-  constructor(config) {
-    this.positions = config.positions;
+  constructor() {
+    this.attributes = {};
+    this.vertexCount = 0;
   }
-  init(gl) {
-    const positionsBuffer = this.createBuffer(
-      gl,
-      new Float32Array(this.positions)
-    );
-    this.buffers = {
-      aPosition: positionsBuffer,
-    };
+  setAttribute(attr, value) {
+    if (!['aPosition'].includes(attr)) {
+      throw new Error('An error occurred setAttribute');
+    }
+    this.attributes[attr] = value;
   }
-  createBuffer(gl, data) {
+  setIndex(indices) {
+    this.indices = indices;
+    this.vertexCount = indices.length;
+  }
+  init(gl, program) {
+    this.processBuffers(gl);
+    this.processVertexAttrib(gl, program);
+  }
+  processBuffers(gl) {
+    const attributes = this.attributes;
+    const buffers = {};
+    const ARRAY_BUFFER = gl.ARRAY_BUFFER;
+    let vertexCount = 0;
+    for (const [key, value] of Object.entries(attributes)) {
+      if (key === 'aPosition') {
+        vertexCount = value.data.length / value.count;
+      }
+      buffers[key] = this.createBuffer(gl, ARRAY_BUFFER, value.data);
+    }
+    this.buffers = buffers;
+    this.vertexCount = vertexCount;
+  }
+  processVertexAttrib(gl, program) {
+    const { buffers, attributes } = this;
+    const attributeInfo = {};
+    for (const [attr, buffer] of Object.entries(buffers)) {
+      const { count } = attributes[attr];
+      const location = gl.getAttribLocation(program, attr);
+      attributeInfo[attr] = {
+        count,
+        buffer,
+        location,
+      };
+    }
+    this.vertexAttributesInfo = attributeInfo;
+  }
+  createBuffer(gl, type, data) {
     // 创建WebGL缓冲对象
     const buffer = gl.createBuffer();
     /*
@@ -40,9 +80,9 @@ class Geometry {
       - gl.ARRAY_BUFFER: 包含顶点属性的 Buffer，如顶点坐标，纹理坐标数据或顶点颜色数据
       - gl.ELEMENT_ARRAY_BUFFER: 用于元素索引的 Buffer
     */
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bindBuffer(type, buffer);
     // 创建并初始化缓冲对象的数据存储区
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.bufferData(type, data, gl.STATIC_DRAW);
     return buffer;
   }
 }
@@ -53,8 +93,7 @@ class Shader {
     this.fragmentSource = config.fragment;
   }
   init(gl) {
-    const program = this.createProgram(gl);
-    this.program = program;
+    this.program = this.createProgram(gl);
   }
   createProgram(gl) {
     const { vertexSource, fragmentSource } = this;
@@ -80,11 +119,11 @@ class Shader {
     throw new Error('Unable to initialize the shader program');
   }
   createShader(gl, type, source) {
-    // 创建一个新的着色器对象
+    // 创建一个新的着色器
     const shader = gl.createShader(type);
-    // 提供代码源
+    // 将源代码发送给源代码
     gl.shaderSource(shader, source);
-    // 编译生成着色器
+    // 着色器编译源代码
     gl.compileShader(shader);
 
     // 检查是否编译成功
@@ -102,53 +141,28 @@ class Mesh {
   constructor(config) {
     this.geometry = config.geometry;
     this.shader = config.shader;
-    // 模型视图矩阵
-    this.modelViewMatrix = mat4.create();
   }
-  render(gl, data) {
-    const { shader, geometry, modelViewMatrix } = this;
-
-    shader.init(gl);
-    geometry.init(gl);
-
-    // 设置物体的位置坐标(x, y, z)
-    mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -6.0]);
-
-    // 设置shader attributes数据
-    this.setAttributes(gl);
-    gl.useProgram(shader.program);
-    // 设置shader uniforms数据
-    this.setUniforms(gl, data);
-  }
-  setAttributes(gl) {
+  init(gl) {
     const { shader, geometry } = this;
-    const program = shader.program;
-    const bufferKeys = Object.entries(geometry.buffers);
-    for (const [key, buffer] of bufferKeys) {
-      const location = gl.getAttribLocation(program, key);
+    shader.init(gl);
+    geometry.init(gl, shader.program);
+  }
+  render(gl) {
+    gl.useProgram(this.shader.program);
+    // 设置shader attributes数据
+    this.updateAttributes(gl);
+  }
+  updateAttributes(gl) {
+    const { vertexAttributesInfo } = this.geometry;
+    for (const value of Object.values(vertexAttributesInfo)) {
+      const { count, location, buffer } = value;
       // 绑定缓冲区位置
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       // 告诉显卡从当前绑定的缓冲区（bindBuffer() 指定的缓冲区）中读取顶点数据
-      // 每个顶点属性的组成数量，必须是1、2、3、4，下面定义是指按照每2个数据的数量区分不同的顶点
-      gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
+      // 每个顶点属性的组成数量，必须是1、2、3、4
+      gl.vertexAttribPointer(location, count, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(location);
     }
-  }
-  setUniforms(gl, data) {
-    const { modelViewMatrix, shader } = this;
-    const { projectionMatrix } = data;
-    const program = shader.program;
-
-    gl.uniformMatrix4fv(
-      gl.getUniformLocation(program, 'uProjectionMatrix'),
-      false,
-      projectionMatrix
-    );
-    gl.uniformMatrix4fv(
-      gl.getUniformLocation(program, 'uModelViewMatrix'),
-      false,
-      modelViewMatrix
-    );
   }
 }
 
@@ -162,18 +176,15 @@ class WebGLRenderer {
       throw new Error('WebGL not supported');
     }
   }
-  createProjectMatrix() {
-    const canvas = this.canvas;
-    const fieldOfView = (45 * Math.PI) / 180;
-    const aspect = canvas.clientWidth / canvas.clientHeight;
-    const zNear = 0.1;
-    const zFar = 100.0;
-    const projectionMatrix = mat4.create();
-    mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
-
-    return projectionMatrix;
+  drawElements(vertexCount) {
+    const gl = this.gl;
+    gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, 0);
   }
-  preRender() {
+  drawArrays(vertexCount) {
+    const gl = this.gl;
+    gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+  }
+  renderStart() {
     const { gl, canvas } = this;
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
@@ -200,46 +211,64 @@ class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
   renderScene(mesh) {
-    const { gl } = this;
-    // 创建投影矩阵
-    const projectionMatrix = this.createProjectMatrix();
-
-    mesh.render(gl, { projectionMatrix });
-
-    // drawArrays表示从向量数组中绘制图元
-    // 绘制一个gl.TRIANGLE_STRIP三角带，从第0个顶点开始，绘制需要用到4个点
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    mesh.render(this.gl);
+    this.drawArrays(mesh.geometry.vertexCount);
   }
   render(mesh) {
-    this.preRender();
+    this.renderStart();
     this.renderScene(mesh);
   }
 }
 
-onMounted(() => {
-  const { canvas } = createAndMountCanvas();
+const createMesh = (gl) => {
+  const geometry = new Geometry();
+  /*
+    模型坐标 -> 世界坐标 -> 视觉空间坐标 -> 裁剪空间坐标 -> NDC坐标 -> 屏幕坐标
+    - 模型坐标系是以物体模型中心为原点的，以webgl坐标系的右手坐标系为依据建立的虚拟坐标系
+    - 世界坐标是世界坐标系下的坐标表示，webgl下的世界坐标系是一个三维的坐标系，它用于定义场景内所有对象的位置和方向
+      - 它是右手坐标系：坐标系原点位于视口中心，x轴正方向向右，y轴正方向向上，z轴正方向从屏幕向外
+      - WebGL的世界坐标系的取值范围通常被限制在(-1, -1, -1)到(1, 1, 1)之间
+    - 视图空间也叫做摄像机空间，它是以摄像机的角度来定义一个空间的，该空间使用摄像机坐标系来描述
+    - 裁剪空间是一个特殊坐标空间，它是一个中心点位于 (0, 0, 0)，角落范围在 (-1, -1, -1) 到 (1, 1, 1) 之间，2 个单位宽的立方体
+  */
+  // positions属性定义顶点位置，其坐标就是模型坐标，定义了3个顶点的位置，每个顶点位置由2个数据组成
+  const positions = new Float32Array([0, 0, 0, 0.5, 2, 0]);
+  geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
 
-  const renderer = new WebGLRenderer({ canvas });
+  /**
+    这里shader逻辑决定了直接使用模型坐标
+    - 模型坐标没有经过变换处理，直接作为后续的裁剪空间的坐标
+    - 当变换成屏幕坐标，如果模型坐标大小超过1.0就会裁剪
+  */
   const mesh = new Mesh({
-    geometry: new Geometry({
-      positions: [1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0],
-    }),
+    geometry,
     shader: new Shader({
       vertex: `
-        attribute vec4 aPosition;
-        uniform mat4 uModelViewMatrix;
-        uniform mat4 uProjectionMatrix;
+        precision mediump float;
+        attribute vec3 aPosition;
         void main() {
-          gl_Position = uProjectionMatrix * uModelViewMatrix * aPosition;
+          gl_Position = vec4(aPosition, 1.0);
         }
       `,
       fragment: `
+        precision mediump float;
         void main() {
           gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         }
       `,
     }),
   });
+
+  mesh.init(gl);
+
+  return mesh;
+};
+
+onMounted(() => {
+  const { canvas } = createAndMountCanvas();
+  const renderer = new WebGLRenderer({ canvas });
+
+  const mesh = createMesh(renderer.gl);
   renderer.render(mesh);
 });
 </script>
