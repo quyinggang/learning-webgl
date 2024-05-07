@@ -221,6 +221,7 @@ class Mesh extends Object3D {
     this.defaultUniforms = {
       uModelMatrix: gl.getUniformLocation(program, 'uModelMatrix'),
       uViewMatrix: gl.getUniformLocation(program, 'uViewMatrix'),
+      uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
     };
   }
   render(gl, data) {
@@ -244,10 +245,15 @@ class Mesh extends Object3D {
   updateUniforms(gl, data) {
     const modelMatrix = this.modelMatrix;
     const defaultUniforms = this.defaultUniforms;
-    const { viewMatrix } = data;
+    const { viewMatrix, projectionMatrix } = data;
 
     gl.uniformMatrix4fv(defaultUniforms.uModelMatrix, false, modelMatrix);
     gl.uniformMatrix4fv(defaultUniforms.uViewMatrix, false, viewMatrix);
+    gl.uniformMatrix4fv(
+      defaultUniforms.uProjectionMatrix,
+      false,
+      projectionMatrix
+    );
   }
 }
 
@@ -261,11 +267,23 @@ class WebGLRenderer {
       throw new Error('WebGL not supported');
     }
     this.viewMatrix = mat4.create();
+    this.projectionMatrix = this.createProjectMatrix();
   }
   setViewMatrix(eye, center, up) {
     const viewMatrix = mat4.create();
     mat4.lookAt(viewMatrix, eye, center, up);
     this.viewMatrix = viewMatrix;
+  }
+  createProjectMatrix() {
+    const canvas = this.canvas;
+    const fieldOfView = (45 * Math.PI) / 180;
+    const aspect = canvas.clientWidth / canvas.clientHeight;
+    const zNear = 0.1;
+    const zFar = 100.0;
+    const projectionMatrix = mat4.create();
+    mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+
+    return projectionMatrix;
   }
   drawElements(vertexCount) {
     const gl = this.gl;
@@ -302,8 +320,8 @@ class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
   renderScene(mesh) {
-    const { gl, viewMatrix } = this;
-    mesh.render(gl, { viewMatrix });
+    const { gl, viewMatrix, projectionMatrix } = this;
+    mesh.render(gl, { viewMatrix, projectionMatrix });
     this.drawArrays(mesh.geometry.vertexCount);
   }
   render(mesh) {
@@ -323,10 +341,11 @@ const createMesh = (gl) => {
     - 视图空间也叫做摄像机空间，它是以摄像机的角度来定义一个空间的，该空间使用摄像机坐标系来描述
     - 裁剪空间是一个特殊坐标空间，它是一个中心点位于 (0, 0, 0)，角落范围在 (-1, -1, -1) 到 (1, 1, 1) 之间，2 个单位宽的立方体
   */
-  const positions = new Float32Array([0, 0, 0, 0.5, 0.7, 0]);
+  const positions = new Float32Array([0, 0, 0, 10, 18, 0]);
   geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
 
-  // 应用视图矩阵
+  // 应用MVP矩阵，首先将模型坐标转换成裁剪空间坐标
+  // 模型坐标可以自由定义大小，不必局限于-1.0 ~ 1.0
   const mesh = new Mesh({
     geometry,
     shader: new Shader({
@@ -335,8 +354,9 @@ const createMesh = (gl) => {
         attribute vec3 aPosition;
         uniform mat4 uModelMatrix;
         uniform mat4 uViewMatrix;
+        uniform mat4 uProjectionMatrix;
         void main() {
-          gl_Position = uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
+          gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
         }
       `,
       fragment: `
@@ -359,9 +379,9 @@ onMounted(() => {
   const renderer = new WebGLRenderer({ canvas });
 
   const mesh = createMesh(renderer.gl);
-  mesh.position.set(0.1, 0.1, 0.3);
+  mesh.position.set(0, 0, -30.0);
 
-  const eye = [0, 0.5, -0.5];
+  const eye = [0, 0, -80];
   const target = mesh.position.toArray();
   const up = [0, 1, 0];
   renderer.setViewMatrix(eye, target, up);

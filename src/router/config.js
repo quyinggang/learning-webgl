@@ -15,6 +15,11 @@ export default [
     componentName: 'ViewMatrix',
   },
   {
+    path: '/projection',
+    title: '透视投影矩阵',
+    componentName: 'ProjectionMatrix',
+  },
+  {
     path: '/color',
     title: '应用顶点颜色',
     componentName: 'ApplyColor',
