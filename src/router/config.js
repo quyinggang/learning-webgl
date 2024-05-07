@@ -49,4 +49,9 @@ export default [
     title: '应用灯光',
     componentName: 'ApplyLight',
   },
+  {
+    path: '/multipleTexture',
+    title: '应用多纹理',
+    componentName: 'MultipleTexture',
+  },
 ];

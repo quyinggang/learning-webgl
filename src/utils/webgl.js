@@ -331,6 +331,7 @@ class Mesh extends Object3D {
     const { modelMatrix, defaultUniforms, shader } = this;
     const { viewMatrix, projectionMatrix } = data;
     const uniformsInfo = shader.uniformsInfo;
+    let textureIndex = 0;
 
     gl.uniformMatrix4fv(defaultUniforms.uModelMatrix, false, modelMatrix);
     gl.uniformMatrix4fv(defaultUniforms.uViewMatrix, false, viewMatrix);
@@ -342,9 +343,11 @@ class Mesh extends Object3D {
 
     const callbackMap = {
       texture: (item) => {
-        gl.activeTexture(gl.TEXTURE0);
+        // 应用多个纹理时需要设置不同的纹理单元
+        gl.activeTexture(gl.TEXTURE0 + textureIndex);
         gl.bindTexture(gl.TEXTURE_2D, item.value);
-        gl.uniform1i(item.location, 0);
+        gl.uniform1i(item.location, textureIndex);
+        textureIndex += 1;
       },
       normalMatrix: (item) => {
         const normalMatrix = this.computeNormalMatrix(viewMatrix);
