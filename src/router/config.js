@@ -10,6 +10,11 @@ export default [
     componentName: 'ModelMatrix',
   },
   {
+    path: '/viewMatrix',
+    title: '视图矩阵',
+    componentName: 'ViewMatrix',
+  },
+  {
     path: '/color',
     title: '应用顶点颜色',
     componentName: 'ApplyColor',
