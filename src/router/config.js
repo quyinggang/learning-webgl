@@ -44,4 +44,9 @@ export default [
     title: '应用纹理',
     componentName: 'ApplyTexture',
   },
+  {
+    path: '/light',
+    title: '应用灯光',
+    componentName: 'ApplyLight',
+  },
 ];
