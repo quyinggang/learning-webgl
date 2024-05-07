@@ -265,6 +265,7 @@ class WebGLRenderer {
   setViewMatrix(eye, center, up) {
     const viewMatrix = mat4.create();
     mat4.lookAt(viewMatrix, eye, center, up);
+    console.log(mat4.lookAt);
     this.viewMatrix = viewMatrix;
   }
   drawElements(vertexCount) {

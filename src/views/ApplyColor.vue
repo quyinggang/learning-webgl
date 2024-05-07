@@ -3,9 +3,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { mat4 } from 'gl-matrix';
-import { createCanvas } from '@/utils';
+import { createCanvas, toRadian } from '@/utils';
 
 const boxElementRef = ref(null);
 
@@ -19,6 +19,74 @@ const createAndMountCanvas = () => {
   return { canvas: canvasElement, bounds: boundingRect };
 };
 
+class Vector3 {
+  constructor(x = 0, y = 0, z = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  set(x, y, z) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+  toArray() {
+    const { x, y, z } = this;
+    return [x, y, z];
+  }
+}
+
+class Object3D {
+  constructor() {
+    this.position = new Vector3();
+    this.rotation = new Vector3();
+    // 模型矩阵
+    this.modelMatrix = mat4.create();
+  }
+  rotateX(rotation) {
+    this.rotation.x = rotation;
+  }
+  rotateY(rotation) {
+    this.rotation.y = rotation;
+  }
+  rotateZ(rotation) {
+    this.rotation.z = rotation;
+  }
+  computeModelMatrix() {
+    const { position, rotation } = this;
+    const rotationList = [
+      {
+        axis: [1, 0, 0],
+        rotation: rotation.x,
+      },
+      {
+        axis: [0, 1, 0],
+        rotation: rotation.y,
+      },
+      {
+        axis: [0, 0, 1],
+        rotation: rotation.z,
+      },
+    ];
+    /**
+     * 模型矩阵是在3D图形渲染中用来描述模型位置、旋转和缩放的矩阵
+     * 在WebGL中，使用模型矩阵可以将模型从模型坐标系（局部坐标系）转换到世界坐标系中
+     */
+    const modelMatrix = mat4.create();
+    // 设置物体的位置坐标
+    mat4.translate(modelMatrix, modelMatrix, [
+      position.x,
+      position.y,
+      position.z,
+    ]);
+    for (const value of rotationList) {
+      // 设置物体旋转
+      mat4.rotate(modelMatrix, modelMatrix, value.rotation, value.axis);
+    }
+    this.modelMatrix = modelMatrix;
+  }
+}
+
 class BufferAttribute {
   constructor(data, count) {
     this.data = data;
@@ -29,6 +97,7 @@ class BufferAttribute {
 class Geometry {
   constructor() {
     this.attributes = {};
+    this.vertexCount = 0;
   }
   setAttribute(attr, value) {
     if (!['aPosition', 'aColor'].includes(attr)) {
@@ -36,15 +105,43 @@ class Geometry {
     }
     this.attributes[attr] = value;
   }
-  init(gl) {
+  setIndex(indices) {
+    this.indices = indices;
+    this.vertexCount = indices.length;
+  }
+  init(gl, program) {
+    this.processBuffers(gl);
+    this.processVertexAttrib(gl, program);
+  }
+  processBuffers(gl) {
     const attributes = this.attributes;
     const buffers = {};
+    const ARRAY_BUFFER = gl.ARRAY_BUFFER;
+    let vertexCount = 0;
     for (const [key, value] of Object.entries(attributes)) {
-      buffers[key] = this.createBuffer(gl, value.data);
+      if (key === 'aPosition') {
+        vertexCount = value.data.length / value.count;
+      }
+      buffers[key] = this.createBuffer(gl, ARRAY_BUFFER, value.data);
     }
     this.buffers = buffers;
+    this.vertexCount = vertexCount;
   }
-  createBuffer(gl, data) {
+  processVertexAttrib(gl, program) {
+    const { buffers, attributes } = this;
+    const attributeInfo = {};
+    for (const [attr, buffer] of Object.entries(buffers)) {
+      const { count } = attributes[attr];
+      const location = gl.getAttribLocation(program, attr);
+      attributeInfo[attr] = {
+        count,
+        buffer,
+        location,
+      };
+    }
+    this.vertexAttributesInfo = attributeInfo;
+  }
+  createBuffer(gl, type, data) {
     // 创建WebGL缓冲对象
     const buffer = gl.createBuffer();
     /*
@@ -52,9 +149,9 @@ class Geometry {
       - gl.ARRAY_BUFFER: 包含顶点属性的 Buffer，如顶点坐标，纹理坐标数据或顶点颜色数据
       - gl.ELEMENT_ARRAY_BUFFER: 用于元素索引的 Buffer
     */
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bindBuffer(type, buffer);
     // 创建并初始化缓冲对象的数据存储区
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.bufferData(type, data, gl.STATIC_DRAW);
     return buffer;
   }
 }
@@ -65,8 +162,7 @@ class Shader {
     this.fragmentSource = config.fragment;
   }
   init(gl) {
-    const program = this.createProgram(gl);
-    this.program = program;
+    this.program = this.createProgram(gl);
   }
   createProgram(gl) {
     const { vertexSource, fragmentSource } = this;
@@ -110,35 +206,34 @@ class Shader {
   }
 }
 
-class Mesh {
+class Mesh extends Object3D {
   constructor(config) {
+    super();
     this.geometry = config.geometry;
     this.shader = config.shader;
-    // 模型视图矩阵
-    this.modelViewMatrix = mat4.create();
+  }
+  init(gl) {
+    const { shader, geometry } = this;
+    shader.init(gl);
+    geometry.init(gl, shader.program);
+
+    const program = shader.program;
+    this.defaultUniforms = {
+      uModelMatrix: gl.getUniformLocation(program, 'uModelMatrix'),
+      uViewMatrix: gl.getUniformLocation(program, 'uViewMatrix'),
+      uProjectionMatrix: gl.getUniformLocation(program, 'uProjectionMatrix'),
+    };
   }
   render(gl, data) {
-    const { shader, geometry, modelViewMatrix } = this;
-
-    shader.init(gl);
-    geometry.init(gl);
-
-    // 设置物体的位置坐标(x, y, z)
-    mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -6.0]);
-
+    gl.useProgram(this.shader.program);
     // 设置shader attributes数据
-    this.setAttributes(gl);
-    gl.useProgram(shader.program);
-    // 设置shader uniforms数据
-    this.setUniforms(gl, data);
+    this.updateAttributes(gl);
+    this.updateUniforms(gl, data);
   }
-  setAttributes(gl) {
-    const { shader, geometry } = this;
-    const program = shader.program;
-    const { attributes, buffers } = geometry;
-    for (const [attr, buffer] of Object.entries(buffers)) {
-      const { count } = attributes[attr];
-      const location = gl.getAttribLocation(program, attr);
+  updateAttributes(gl) {
+    const { vertexAttributesInfo } = this.geometry;
+    for (const value of Object.values(vertexAttributesInfo)) {
+      const { count, location, buffer } = value;
       // 绑定缓冲区位置
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       // 告诉显卡从当前绑定的缓冲区（bindBuffer() 指定的缓冲区）中读取顶点数据
@@ -147,21 +242,59 @@ class Mesh {
       gl.enableVertexAttribArray(location);
     }
   }
-  setUniforms(gl, data) {
-    const { modelViewMatrix, shader } = this;
-    const { projectionMatrix } = data;
-    const program = shader.program;
+  updateUniforms(gl, data) {
+    const modelMatrix = this.modelMatrix;
+    const defaultUniforms = this.defaultUniforms;
+    const { viewMatrix, projectionMatrix } = data;
 
+    gl.uniformMatrix4fv(defaultUniforms.uModelMatrix, false, modelMatrix);
+    gl.uniformMatrix4fv(defaultUniforms.uViewMatrix, false, viewMatrix);
     gl.uniformMatrix4fv(
-      gl.getUniformLocation(program, 'uProjectionMatrix'),
+      defaultUniforms.uProjectionMatrix,
       false,
       projectionMatrix
     );
-    gl.uniformMatrix4fv(
-      gl.getUniformLocation(program, 'uModelViewMatrix'),
-      false,
-      modelViewMatrix
+  }
+}
+
+class Camera {
+  constructor(config) {
+    this.fov = toRadian(config.fov);
+    this.aspect = config.aspect;
+    this.near = config.near;
+    this.far = config.far;
+    this.viewMatrix = mat4.create();
+    this.projectionMatrix = mat4.create();
+    this.position = new Vector3();
+    this.lookAtTarget = new Vector3();
+    this.up = new Vector3(0, 1, 0);
+  }
+  lookAt(x, y, z) {
+    this.lookAtTarget.set(x, y, z);
+  }
+  computeViewMatrix() {
+    const { position, lookAtTarget, up } = this;
+    const viewMatrix = mat4.create();
+    mat4.lookAt(
+      viewMatrix,
+      position.toArray(),
+      lookAtTarget.toArray(),
+      up.toArray()
     );
+    this.viewMatrix = viewMatrix;
+  }
+}
+
+class PerspectiveCamera extends Camera {
+  constructor(config) {
+    super(config);
+    this.projectionMatrix = this.computeProjectionMatrix();
+  }
+  computeProjectionMatrix() {
+    const { fov, aspect, near, far } = this;
+    const projectionMatrix = mat4.create();
+    mat4.perspective(projectionMatrix, fov, aspect, near, far);
+    return projectionMatrix;
   }
 }
 
@@ -175,18 +308,18 @@ class WebGLRenderer {
       throw new Error('WebGL not supported');
     }
   }
-  createProjectMatrix() {
-    const canvas = this.canvas;
-    const fieldOfView = (45 * Math.PI) / 180;
-    const aspect = canvas.clientWidth / canvas.clientHeight;
-    const zNear = 0.1;
-    const zFar = 100.0;
-    const projectionMatrix = mat4.create();
-    mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
-
-    return projectionMatrix;
+  setCamera(camera) {
+    this.camera = camera;
   }
-  preRender() {
+  drawElements(vertexCount) {
+    const gl = this.gl;
+    gl.drawElements(gl.TRIANGLES, vertexCount, gl.UNSIGNED_SHORT, 0);
+  }
+  drawArrays(vertexCount) {
+    const gl = this.gl;
+    gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+  }
+  renderStart() {
     const { gl, canvas } = this;
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
@@ -213,33 +346,22 @@ class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
   renderScene(mesh) {
-    const { gl } = this;
-    // 创建投影矩阵
-    const projectionMatrix = this.createProjectMatrix();
-
-    mesh.render(gl, { projectionMatrix });
-
-    // drawArrays表示从向量数组中绘制图元
-    // 绘制一个gl.TRIANGLE_STRIP三角带，从第0个顶点开始，绘制需要用到4个点
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    const { gl, camera } = this;
+    const { viewMatrix, projectionMatrix } = camera;
+    mesh.render(gl, { viewMatrix, projectionMatrix });
+    this.drawArrays(mesh.geometry.vertexCount);
   }
   render(mesh) {
-    this.preRender();
+    this.renderStart();
     this.renderScene(mesh);
   }
 }
 
-onMounted(() => {
-  const { canvas } = createAndMountCanvas();
-
-  const renderer = new WebGLRenderer({ canvas });
-
+const createMesh = (gl) => {
   const geometry = new Geometry();
-  const positions = new Float32Array([
-    1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0,
-  ]);
+  const positions = new Float32Array([1.0, 1.0, -1.0, 1.0, 1.0, -1.0]);
   const colors = new Float32Array([
-    1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+    1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0,
   ]);
   geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
   geometry.setAttribute('aColor', new BufferAttribute(colors, 3));
@@ -251,12 +373,13 @@ onMounted(() => {
         precision mediump float;
         attribute vec3 aPosition;
         attribute vec3 aColor;
-        uniform mat4 uModelViewMatrix;
+        uniform mat4 uModelMatrix;
+        uniform mat4 uViewMatrix;
         uniform mat4 uProjectionMatrix;
         varying vec3 vColor;
         void main() {
           vColor = aColor;
-          gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+          gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
         }
       `,
       fragment: `
@@ -268,6 +391,42 @@ onMounted(() => {
       `,
     }),
   });
-  renderer.render(mesh);
+
+  mesh.init(gl);
+
+  return mesh;
+};
+
+onMounted(() => {
+  let raf = null;
+  const { canvas } = createAndMountCanvas();
+  const renderer = new WebGLRenderer({ canvas });
+
+  const mesh = createMesh(renderer.gl);
+  mesh.position.set(0, 0, -6.0);
+
+  const target = mesh.position.toArray();
+  const aspect = canvas.clientWidth / canvas.clientHeight;
+  const camera = new PerspectiveCamera({
+    fov: 45,
+    aspect,
+    near: 0.1,
+    far: 1000,
+  });
+  camera.position.set(0, 0, -6);
+  camera.lookAt(target[0], target[1], target[2]);
+  camera.computeViewMatrix();
+  renderer.setCamera(camera);
+
+  const animate = () => {
+    mesh.rotateY(mesh.rotation.y + 0.01);
+    mesh.computeModelMatrix();
+    renderer.render(mesh);
+    raf = window.requestAnimationFrame(animate);
+  };
+
+  animate();
+
+  onBeforeUnmount(() => window.cancelAnimationFrame(raf));
 });
 </script>
