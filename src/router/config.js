@@ -20,14 +20,14 @@ export default [
     componentName: 'ProjectionMatrix',
   },
   {
+    path: '/camera',
+    title: 'Camera实现',
+    componentName: 'Camera',
+  },
+  {
     path: '/color',
     title: '应用顶点颜色',
     componentName: 'ApplyColor',
-  },
-  {
-    path: '/rotate',
-    title: '位置与旋转',
-    componentName: 'PositionRotation',
   },
   {
     path: '/index',

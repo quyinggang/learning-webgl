@@ -62,3 +62,7 @@ export const createCanvas = (width, height) => {
 export const isPowerOf2 = (value) => {
   return (value & (value - 1)) === 0;
 };
+
+export const toRadian = (angle) => {
+  return (angle * Math.PI) / 180;
+};
