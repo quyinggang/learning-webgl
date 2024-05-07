@@ -164,7 +164,7 @@ onMounted(() => {
   const renderer = new WebGLRenderer({ canvas });
 
   const mesh = createMesh(renderer.gl);
-  mesh.position.set(0, 0, -6.0);
+  mesh.position.set(0, 0, -3.0);
 
   const target = mesh.position.toArray();
   const aspect = canvas.clientWidth / canvas.clientHeight;

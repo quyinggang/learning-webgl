@@ -5,6 +5,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { createCanvas } from '@/utils';
+import { BufferAttribute } from '@/utils/webgl';
 
 const boxElementRef = ref(null);
 
@@ -17,13 +18,6 @@ const createAndMountCanvas = () => {
 
   return { canvas: canvasElement, bounds: boundingRect };
 };
-
-class BufferAttribute {
-  constructor(data, count) {
-    this.data = data;
-    this.count = count;
-  }
-}
 
 class Geometry {
   constructor() {

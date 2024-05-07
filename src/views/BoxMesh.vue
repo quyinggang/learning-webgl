@@ -104,7 +104,6 @@ onMounted(() => {
   const mesh = createMesh(renderer.gl);
   mesh.position.set(0, 0, -6.0);
 
-  const target = mesh.position.toArray();
   const aspect = canvas.clientWidth / canvas.clientHeight;
   const camera = new PerspectiveCamera({
     fov: 45,
@@ -112,8 +111,7 @@ onMounted(() => {
     near: 0.1,
     far: 1000,
   });
-  camera.position.set(0, 0, -6);
-  camera.lookAt(target[0], target[1], target[2]);
+  camera.position.set(0, 0, 6);
   camera.computeViewMatrix();
   renderer.setCamera(camera);
 

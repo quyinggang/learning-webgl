@@ -6,6 +6,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { mat4 } from 'gl-matrix';
 import { createCanvas } from '@/utils';
+import { BufferAttribute, Object3D } from '@/utils/webgl';
 
 const boxElementRef = ref(null);
 
@@ -18,81 +19,6 @@ const createAndMountCanvas = () => {
 
   return { canvas: canvasElement, bounds: boundingRect };
 };
-
-class Vector3 {
-  constructor(x = 0, y = 0, z = 0) {
-    this.x = x;
-    this.y = y;
-    this.z = z;
-  }
-  set(x, y, z) {
-    this.x = x;
-    this.y = y;
-    this.z = z;
-  }
-  toArray() {
-    const { x, y, z } = this;
-    return [x, y, z];
-  }
-}
-
-class Object3D {
-  constructor() {
-    this.position = new Vector3();
-    this.rotation = new Vector3();
-    // 模型矩阵
-    this.modelMatrix = mat4.create();
-  }
-  rotateX(rotation) {
-    this.rotation.x = rotation;
-  }
-  rotateY(rotation) {
-    this.rotation.y = rotation;
-  }
-  rotateZ(rotation) {
-    this.rotation.z = rotation;
-  }
-  computeModelMatrix() {
-    const { position, rotation } = this;
-    const rotationList = [
-      {
-        axis: [1, 0, 0],
-        rotation: rotation.x,
-      },
-      {
-        axis: [0, 1, 0],
-        rotation: rotation.y,
-      },
-      {
-        axis: [0, 0, 1],
-        rotation: rotation.z,
-      },
-    ];
-    /**
-     * 模型矩阵是在3D图形渲染中用来描述模型位置、旋转和缩放的矩阵
-     * 在WebGL中，使用模型矩阵可以将模型从模型坐标系（局部坐标系）转换到世界坐标系中
-     */
-    const modelMatrix = mat4.create();
-    // 设置物体的位置坐标
-    mat4.translate(modelMatrix, modelMatrix, [
-      position.x,
-      position.y,
-      position.z,
-    ]);
-    for (const value of rotationList) {
-      // 设置物体旋转
-      mat4.rotate(modelMatrix, modelMatrix, value.rotation, value.axis);
-    }
-    this.modelMatrix = modelMatrix;
-  }
-}
-
-class BufferAttribute {
-  constructor(data, count) {
-    this.data = data;
-    this.count = count;
-  }
-}
 
 class Geometry {
   constructor() {

@@ -452,4 +452,5 @@ export {
   Shader,
   Geometry,
   WebGLRenderer,
+  Object3D,
 };

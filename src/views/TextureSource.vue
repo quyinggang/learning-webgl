@@ -68,12 +68,12 @@ const createVideo = () => {
 const createMesh = (gl, source) => {
   const geometry = new Geometry();
   const positions = new Float32Array([
-    -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0,
+    -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0,
   ]);
   const indices = new Uint16Array([0, 1, 2, 2, 3, 0]);
 
   // 纹理坐标是0.0 ～ 1.0范围的，定义uvs需要与顶点一一对应
-  const uvs = new Float32Array([1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]);
+  const uvs = new Float32Array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0]);
   geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
   geometry.setAttribute('aUV', new BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
@@ -120,9 +120,8 @@ onMounted(() => {
 
   createVideo().then((video) => {
     const mesh = createMesh(renderer.gl, video);
-    mesh.position.set(0, 0.0, -1.0);
+    mesh.position.set(-1.5, 0.5, -2.0);
 
-    const target = mesh.position.toArray();
     const aspect = canvas.clientWidth / canvas.clientHeight;
     const camera = new PerspectiveCamera({
       fov: 45,
@@ -130,8 +129,7 @@ onMounted(() => {
       near: 0.1,
       far: 1000,
     });
-    camera.position.set(0, 0, -6);
-    camera.lookAt(target[0], target[1], target[2]);
+    camera.position.set(0, 0, 3);
     camera.computeViewMatrix();
     renderer.setCamera(camera);
 
