@@ -5,6 +5,11 @@ export default [
     componentName: 'ModelCoord',
   },
   {
+    path: '/modelMatrix',
+    title: '模型矩阵',
+    componentName: 'ModelMatrix',
+  },
+  {
     path: '/color',
     title: '应用顶点颜色',
     componentName: 'ApplyColor',
