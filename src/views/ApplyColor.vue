@@ -89,7 +89,6 @@ onMounted(() => {
 
   const animate = () => {
     mesh.rotateY(mesh.rotation.y + 0.01);
-    mesh.computeModelMatrix();
     renderer.render(mesh);
     raf = window.requestAnimationFrame(animate);
   };

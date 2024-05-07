@@ -54,4 +54,9 @@ export default [
     title: '应用多纹理',
     componentName: 'MultipleTexture',
   },
+  {
+    path: '/source',
+    title: '纹理来源',
+    componentName: 'TextureSource',
+  },
 ];

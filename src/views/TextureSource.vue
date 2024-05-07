@@ -4,8 +4,7 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue';
-import { createCanvas, loadImage } from '@/utils';
-import GMImage from '@/assets/gm.jpg';
+import { createCanvas } from '@/utils';
 import {
   WebGLRenderer,
   Mesh,
@@ -14,6 +13,7 @@ import {
   BufferAttribute,
   PerspectiveCamera,
 } from '@/utils/webgl';
+import GMVideo from '@/assets/gm.mp4';
 
 const boxElementRef = ref(null);
 
@@ -27,58 +27,54 @@ const createAndMountCanvas = () => {
   return { canvas: canvasElement, bounds: boundingRect };
 };
 
-const createMesh = (gl, image) => {
+const createVideo = () => {
+  return new Promise((resolve) => {
+    let playing = false;
+    let timeupdate = false;
+    const videoElement = document.createElement('video');
+    videoElement.muted = true;
+    videoElement.crossOrigin = 'anonymous';
+    videoElement.loop = true;
+    videoElement.preload = 'metadata';
+
+    videoElement.addEventListener(
+      'playing',
+      () => {
+        playing = true;
+        checkReady();
+      },
+      true
+    );
+
+    videoElement.addEventListener(
+      'timeupdate',
+      () => {
+        timeupdate = true;
+        checkReady();
+      },
+      true
+    );
+
+    const checkReady = () => {
+      if (playing && timeupdate) {
+        resolve(videoElement);
+      }
+    };
+    videoElement.src = GMVideo;
+    videoElement.play();
+  });
+};
+
+const createMesh = (gl, source) => {
   const geometry = new Geometry();
   const positions = new Float32Array([
-    // Front face
-    -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
-
-    // Back face
-    -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0,
-
-    // Top face
-    -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0,
-
-    // Bottom face
-    -1.0, -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0,
-
-    // Right face
-    1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0,
-
-    // Left face
-    -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0,
+    -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0,
   ]);
-  const indices = new Uint16Array([
-    0, 1, 2, 2, 3, 0,
-
-    4, 5, 6, 6, 7, 4,
-
-    8, 9, 10, 10, 11, 8,
-
-    12, 13, 14, 14, 15, 12,
-
-    16, 17, 18, 18, 19, 16,
-
-    20, 21, 22, 22, 23, 20,
-  ]);
+  const indices = new Uint16Array([0, 1, 2, 2, 3, 0]);
 
   // 纹理坐标是0.0 ～ 1.0范围的，定义uvs需要与顶点一一对应
-  const uvs = new Float32Array([
-    // Front
-    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-    // Back
-    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-    // Top
-    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-    // Bottom
-    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-    // Right
-    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-    // Left
-    0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-  ]);
-
-  geometry.setAttribute('aPosition', new BufferAttribute(positions, 3));
+  const uvs = new Float32Array([1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0]);
+  geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
   geometry.setAttribute('aUV', new BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
 
@@ -107,7 +103,7 @@ const createMesh = (gl, image) => {
         }
       `,
       resources: {
-        uTexture: { type: 'texture', value: image },
+        uTexture: { type: 'texture', value: source },
       },
     }),
   });
@@ -122,9 +118,9 @@ onMounted(() => {
   const { canvas } = createAndMountCanvas();
   const renderer = new WebGLRenderer({ canvas });
 
-  loadImage(GMImage).then((image) => {
-    const mesh = createMesh(renderer.gl, image);
-    mesh.position.set(0, 0, -6.0);
+  createVideo().then((video) => {
+    const mesh = createMesh(renderer.gl, video);
+    mesh.position.set(0, 0.0, -1.0);
 
     const target = mesh.position.toArray();
     const aspect = canvas.clientWidth / canvas.clientHeight;
@@ -140,7 +136,6 @@ onMounted(() => {
     renderer.setCamera(camera);
 
     const animate = () => {
-      mesh.rotateY(mesh.rotation.y + 0.01);
       renderer.render(mesh);
       raf = window.requestAnimationFrame(animate);
     };

@@ -225,6 +225,7 @@ class Mesh extends Object3D {
     };
   }
   render(gl, data) {
+    this.computeModelMatrix();
     gl.useProgram(this.shader.program);
     // 设置shader attributes数据
     this.updateAttributes(gl);
@@ -423,7 +424,6 @@ onMounted(() => {
 
   const animate = () => {
     mesh.rotateY(mesh.rotation.y + 0.01);
-    mesh.computeModelMatrix();
     renderer.render(mesh);
     raf = window.requestAnimationFrame(animate);
   };

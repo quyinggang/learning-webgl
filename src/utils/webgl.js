@@ -63,11 +63,7 @@ class Object3D {
      */
     const modelMatrix = mat4.create();
     // 设置物体的位置坐标
-    mat4.translate(modelMatrix, modelMatrix, [
-      position.x,
-      position.y,
-      position.z,
-    ]);
+    mat4.translate(modelMatrix, modelMatrix, position.toArray());
     for (const value of rotationList) {
       // 设置物体旋转
       mat4.rotate(modelMatrix, modelMatrix, value.rotation, value.axis);
@@ -197,33 +193,37 @@ class Shader {
   init(gl) {
     this.program = this.createProgram(gl);
     this.processResources(gl);
-    // 浏览器会从加载的图像中按从左上角开始的自上而下顺序复制像素，而WebGL需要按自下而上的顺序——从左下角开始的像素顺序
-    // 下面设置是防止渲染时图像纹理方向错误
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   }
   processResources(gl) {
     const { program, resources = {} } = this;
     const customUniforms = {};
     for (const [attr, data] of Object.entries(resources)) {
+      const resourceValue = data.value;
       const location = gl.getUniformLocation(program, attr);
-      const result = { location, type: data.type, value: data.value };
+      const result = { location, type: data.type, value: resourceValue };
       if (data.type === 'texture') {
-        const texture = this.createTexture(gl, data.value);
+        const isVideoSource = resourceValue instanceof HTMLVideoElement;
+        const texture = this.createTexture(gl, resourceValue);
         result.value = texture;
+        if (isVideoSource) {
+          result.video = resourceValue;
+        }
       }
       customUniforms[attr] = result;
     }
     this.uniformsInfo = customUniforms;
   }
-  createTexture(gl, image) {
+  createTexture(gl, source) {
     // 创建WebGL纹理对象
     const texture = gl.createTexture();
     // 绑定给定的纹理到目标
     gl.bindTexture(gl.TEXTURE_2D, texture);
     // 指定纹理的数据源
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    const isVideoSource = source instanceof HTMLVideoElement;
     // 对于宽高两个维度上是否为2的幂来设置纹理的过滤（filter）和平铺（wrap）
-    if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+    const isPower2Image = isPowerOf2(source.width) && isPowerOf2(source.height);
+    if (isPower2Image && !isVideoSource) {
       gl.generateMipmap(gl.TEXTURE_2D);
     } else {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -232,6 +232,10 @@ class Shader {
     }
 
     return texture;
+  }
+  updateVideoTexture(gl, texture, video) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
   }
   createProgram(gl) {
     const { vertexSource, fragmentSource } = this;
@@ -295,6 +299,7 @@ class Mesh extends Object3D {
     this.isDrawElements = !!geometry.indexBuffer;
   }
   render(gl, data) {
+    this.computeModelMatrix();
     gl.useProgram(this.shader.program);
     // 设置shader attributes数据
     this.updateAttributes(gl);
@@ -348,6 +353,11 @@ class Mesh extends Object3D {
         gl.bindTexture(gl.TEXTURE_2D, item.value);
         gl.uniform1i(item.location, textureIndex);
         textureIndex += 1;
+
+        // 视频作为纹理来源需要在每一帧动态更新纹理内容才能实现播放
+        if (item.video) {
+          shader.updateVideoTexture(gl, item.value, item.video);
+        }
       },
       normalMatrix: (item) => {
         const normalMatrix = this.computeNormalMatrix(viewMatrix);
@@ -416,18 +426,22 @@ class WebGLRenderer {
     */
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
-  renderScene(mesh) {
+  renderScene(data) {
     const { gl, camera } = this;
     const { viewMatrix, projectionMatrix } = camera;
-    mesh.render(gl, { viewMatrix, projectionMatrix });
-    const vertexCount = mesh.geometry.vertexCount;
-    mesh.isDrawElements
-      ? this.drawElements(vertexCount)
-      : this.drawArrays(vertexCount);
+
+    const list = Array.isArray(data) ? data : [data];
+    for (const mesh of list) {
+      mesh.render(gl, { viewMatrix, projectionMatrix });
+      const vertexCount = mesh.geometry.vertexCount;
+      mesh.isDrawElements
+        ? this.drawElements(vertexCount)
+        : this.drawArrays(vertexCount);
+    }
   }
-  render(mesh) {
+  render(data) {
     this.renderStart();
-    this.renderScene(mesh);
+    this.renderScene(data);
   }
 }
 
