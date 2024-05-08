@@ -59,4 +59,9 @@ export default [
     title: '纹理来源',
     componentName: 'TextureSource',
   },
+  {
+    path: '/cube',
+    title: '立方体贴图',
+    componentName: 'CubeTexture',
+  },
 ];
