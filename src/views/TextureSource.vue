@@ -64,6 +64,18 @@ const createVideo = () => {
     videoElement.play();
   });
 };
+const createCanvasSource = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.rect(0, 0, 256, 256);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.fillText('Canvas纹理数据', 100, 100);
+  return canvas;
+};
 
 const createMesh = (gl, source) => {
   const geometry = new Geometry();
@@ -102,6 +114,13 @@ const createMesh = (gl, source) => {
           gl_FragColor = texture2D(uTexture, vUV);
         }
       `,
+      /**
+       * webgl纹理数据可以来源于
+       * - ImageBitmap
+       * - HTMLImageElement
+       * - HTMLVideoElement
+       * - HTMLCanvasElement
+       */
       resources: {
         uTexture: { type: 'texture', value: source },
       },
@@ -122,6 +141,10 @@ onMounted(() => {
     const mesh = createMesh(renderer.gl, video);
     mesh.position.set(-1.5, 0.5, -2.0);
 
+    const canvasSource = createCanvasSource();
+    const mesh2 = createMesh(renderer.gl, canvasSource);
+    mesh2.position.set(1.5, 0.5, -2.0);
+
     const aspect = canvas.clientWidth / canvas.clientHeight;
     const camera = new PerspectiveCamera({
       fov: 45,
@@ -134,7 +157,7 @@ onMounted(() => {
     renderer.setCamera(camera);
 
     const animate = () => {
-      renderer.render(mesh);
+      renderer.render([mesh, mesh2]);
       raf = window.requestAnimationFrame(animate);
     };
 
