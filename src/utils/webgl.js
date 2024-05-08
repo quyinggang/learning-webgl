@@ -460,6 +460,7 @@ class WebGLRenderer {
       throw new Error('WebGL not supported');
     }
     this.scissor = null;
+    this.depthTest = true;
   }
   drawElements(vertexCount) {
     const gl = this.gl;
@@ -472,8 +473,11 @@ class WebGLRenderer {
   setScissor(x, y, width, height) {
     this.scissor = new Vector4(x, y, width, height);
   }
+  setDepthTestVisible(value) {
+    this.depthTest = !!value;
+  }
   renderStart() {
-    const { gl, canvas, scissor } = this;
+    const { gl, canvas, scissor, depthTest } = this;
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
@@ -488,12 +492,21 @@ class WebGLRenderer {
       - gl.SCISSOR_TEST：激活剪裁测试，即丢弃在剪裁矩形范围外的片段，需要后续调用scissor()
       - gl.STENCIL_TEST：激活模板测试并且更新模板缓冲区，需要后续调用stencilFunc()
     */
+    // 开启裁剪测试
     if (scissor) {
       gl.enable(gl.SCISSOR_TEST);
       gl.scissor(scissor.x, scissor.y, scissor.z, scissor.w);
+    } else {
+      gl.disable(gl.SCISSOR_TEST);
     }
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
+    // 开启深度测试
+    if (depthTest) {
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+    } else {
+      gl.disable(gl.DEPTH_TEST);
+    }
+
     /*
       使用预设值来清空缓冲，值可能是：
       - gl.COLOR_BUFFER_BIT //颜色缓冲区

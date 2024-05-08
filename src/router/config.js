@@ -69,4 +69,9 @@ export default [
     title: '裁剪测试',
     componentName: 'ScissorTest',
   },
+  {
+    path: '/depth',
+    title: '深度测试',
+    componentName: 'DepthTest',
+  },
 ];
