@@ -83,11 +83,10 @@ onMounted(() => {
   });
   camera.position.set(0, 0, 6);
   camera.computeViewMatrix();
-  renderer.setCamera(camera);
 
   const animate = () => {
     mesh.rotateY(mesh.rotation.y + 0.01);
-    renderer.render(mesh);
+    renderer.render(mesh, camera);
     raf = window.requestAnimationFrame(animate);
   };
 

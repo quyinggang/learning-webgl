@@ -1,6 +1,13 @@
 import { mat4 } from 'gl-matrix';
 import { toRadian, isPowerOf2 } from './index';
 
+const alias = {
+  texture: 'texture',
+  cubeTexture: 'cubeTexture',
+  f3v: 'f3v',
+  normal: 'normalMatrix',
+};
+
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) {
     this.x = x;
@@ -15,6 +22,25 @@ class Vector3 {
   toArray() {
     const { x, y, z } = this;
     return [x, y, z];
+  }
+}
+
+class Vector4 {
+  constructor(x = 0, y = 0, z = 0, w = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.w = w;
+  }
+  set(x, y, z, w) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.w = w;
+  }
+  toArray() {
+    const { x, y, z, w } = this;
+    return [x, y, z, w];
   }
 }
 
@@ -198,7 +224,7 @@ class Shader {
     const { program, resources = {} } = this;
     const customUniforms = {};
     const callbackMap = {
-      texture: (value) => {
+      [alias.texture]: (value) => {
         const result = {};
         const isVideoSource = value instanceof HTMLVideoElement;
         const texture = this.createTexture(gl, value);
@@ -208,7 +234,7 @@ class Shader {
         }
         return result;
       },
-      cubeTexture: (value) => {
+      [alias.cubeTexture]: (value) => {
         const result = {};
         const texture = this.createCubeTexture(gl, value);
         result.value = texture;
@@ -388,7 +414,7 @@ class Mesh extends Object3D {
     );
 
     const callbackMap = {
-      texture: (item) => {
+      [alias.texture]: (item) => {
         // 应用多个纹理时需要设置不同的纹理单元
         gl.activeTexture(gl.TEXTURE0 + textureIndex);
         gl.bindTexture(gl.TEXTURE_2D, item.value);
@@ -400,15 +426,15 @@ class Mesh extends Object3D {
           shader.updateVideoTexture(gl, item.value, item.video);
         }
       },
-      normalMatrix: (item) => {
+      [alias.normal]: (item) => {
         const normalMatrix = this.computeNormalMatrix(viewMatrix);
         gl.uniformMatrix4fv(item.location, false, normalMatrix);
       },
-      f3v: (item) => {
+      [alias.f3v]: (item) => {
         const value = item.value;
         gl.uniform3fv(item.location, value);
       },
-      cubeTexture: (item) => {
+      [alias.cubeTexture]: (item) => {
         gl.activeTexture(gl.TEXTURE0);
         gl.uniform1i(item.location, 0);
       },
@@ -433,9 +459,7 @@ class WebGLRenderer {
     if (!gl) {
       throw new Error('WebGL not supported');
     }
-  }
-  setCamera(camera) {
-    this.camera = camera;
+    this.scissor = null;
   }
   drawElements(vertexCount) {
     const gl = this.gl;
@@ -445,8 +469,11 @@ class WebGLRenderer {
     const gl = this.gl;
     gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
   }
+  setScissor(x, y, width, height) {
+    this.scissor = new Vector4(x, y, width, height);
+  }
   renderStart() {
-    const { gl, canvas } = this;
+    const { gl, canvas, scissor } = this;
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
@@ -461,6 +488,10 @@ class WebGLRenderer {
       - gl.SCISSOR_TEST：激活剪裁测试，即丢弃在剪裁矩形范围外的片段，需要后续调用scissor()
       - gl.STENCIL_TEST：激活模板测试并且更新模板缓冲区，需要后续调用stencilFunc()
     */
+    if (scissor) {
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(scissor.x, scissor.y, scissor.z, scissor.w);
+    }
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     /*
@@ -471,8 +502,8 @@ class WebGLRenderer {
     */
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   }
-  renderScene(data) {
-    const { gl, camera } = this;
+  renderScene(data, camera) {
+    const { gl } = this;
     const { viewMatrix, projectionMatrix } = camera;
 
     const list = Array.isArray(data) ? data : [data];
@@ -484,9 +515,9 @@ class WebGLRenderer {
         : this.drawArrays(vertexCount);
     }
   }
-  render(data) {
+  render(data, camera) {
     this.renderStart();
-    this.renderScene(data);
+    this.renderScene(data, camera);
   }
 }
 

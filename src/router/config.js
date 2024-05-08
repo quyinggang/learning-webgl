@@ -64,4 +64,9 @@ export default [
     title: '立方体贴图',
     componentName: 'CubeTexture',
   },
+  {
+    path: '/scissor',
+    title: '裁剪测试',
+    componentName: 'ScissorTest',
+  },
 ];

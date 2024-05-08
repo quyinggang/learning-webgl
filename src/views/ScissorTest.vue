@@ -26,21 +26,7 @@ const createAndMountCanvas = () => {
   return { canvas: canvasElement, bounds: boundingRect };
 };
 
-const createCanvasSource = (text) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.rect(0, 0, 256, 256);
-  ctx.fill();
-  ctx.font = '60px serif';
-  ctx.fillStyle = '#000';
-  ctx.fillText(text, 100, 100);
-  return canvas;
-};
-
-const createMesh = (gl, images) => {
+const createMesh = (gl, color) => {
   const geometry = new Geometry();
   const positions = new Float32Array([
     // Front face
@@ -87,22 +73,19 @@ const createMesh = (gl, images) => {
         uniform mat4 uModelMatrix;
         uniform mat4 uViewMatrix;
         uniform mat4 uProjectionMatrix;
-        varying vec3 vNormal;
         void main() {
           gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
-          vNormal = normalize(aPosition.xyz);
         }
       `,
       fragment: `
         precision mediump float;
-        uniform samplerCube uTexture;
-        varying vec3 vNormal;
+        uniform vec3 uColor;
         void main() {
-          gl_FragColor = textureCube(uTexture, normalize(vNormal));
+          gl_FragColor = vec4(uColor, 1.0);
         }
       `,
       resources: {
-        uTexture: { type: 'cubeTexture', value: images },
+        uColor: { type: 'f3v', value: color },
       },
     }),
   });
@@ -117,15 +100,12 @@ onMounted(() => {
   const { canvas } = createAndMountCanvas();
   const renderer = new WebGLRenderer({ canvas });
 
-  // 立方体贴图要求图片的宽高一致，否则会报错
-  const texts = ['上', '下', '左', '右', '前', '后'];
-  const mesh = createMesh(
-    renderer.gl,
-    texts.map((text) => createCanvasSource(text))
-  );
+  const mesh = createMesh(renderer.gl, [0.6, 0.0, 0.8]);
   mesh.position.set(0, 0, -6.0);
 
-  const target = mesh.position.toArray();
+  const mesh2 = createMesh(renderer.gl, [0.3, 0.7, 0.5]);
+  mesh2.position.set(0, 0, -6.0);
+
   const aspect = canvas.clientWidth / canvas.clientHeight;
   const camera = new PerspectiveCamera({
     fov: 45,
@@ -133,13 +113,33 @@ onMounted(() => {
     near: 0.1,
     far: 1000,
   });
-  camera.position.set(0, 6, 6);
-  camera.lookAt(target[0], target[1], target[2]);
+  camera.position.set(0, 0, 6);
   camera.computeViewMatrix();
+
+  const rightCamera = new PerspectiveCamera({
+    fov: 45,
+    aspect,
+    near: 0.1,
+    far: 1000,
+  });
+  rightCamera.position.set(0, 0, 6);
+  rightCamera.computeViewMatrix();
 
   const animate = () => {
     mesh.rotateY(mesh.rotation.y + 0.01);
+    mesh2.rotateY(mesh.rotation.y);
+    // 开启裁剪测试
+    renderer.setScissor(0, 0, canvas.width * 0.5, canvas.height * 0.5);
     renderer.render(mesh, camera);
+
+    // 开启裁剪测试
+    renderer.setScissor(
+      canvas.width * 0.5,
+      canvas.height * 0.5,
+      canvas.width * 0.5,
+      canvas.height * 0.5
+    );
+    renderer.render(mesh2, rightCamera);
     raf = window.requestAnimationFrame(animate);
   };
 
