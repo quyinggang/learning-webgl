@@ -70,6 +70,11 @@ export default [
     componentName: 'ScissorTest',
   },
   {
+    path: '/stencil',
+    title: '模板测试',
+    componentName: 'StencilTest',
+  },
+  {
     path: '/depth',
     title: '深度测试',
     componentName: 'DepthTest',

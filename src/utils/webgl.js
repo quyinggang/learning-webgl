@@ -55,6 +55,7 @@ class Object3D {
   constructor() {
     this.position = new Vector3();
     this.rotation = new Vector3();
+    this.scale = new Vector3(1, 1, 1);
     // 模型矩阵
     this.modelMatrix = mat4.create();
   }
@@ -68,7 +69,7 @@ class Object3D {
     this.rotation.z = rotation;
   }
   computeModelMatrix() {
-    const { position, rotation } = this;
+    const { position, rotation, scale } = this;
     const rotationList = [
       {
         axis: [1, 0, 0],
@@ -94,6 +95,7 @@ class Object3D {
       // 设置物体旋转
       mat4.rotate(modelMatrix, modelMatrix, value.rotation, value.axis);
     }
+    mat4.scale(modelMatrix, modelMatrix, scale.toArray());
     this.modelMatrix = modelMatrix;
   }
 }
@@ -215,10 +217,21 @@ class Shader {
     this.vertexSource = config.vertex;
     this.fragmentSource = config.fragment;
     this.resources = config.resources;
+    this.processStencil(config.stencil);
   }
   init(gl) {
     this.program = this.createProgram(gl);
     this.processResources(gl);
+  }
+  processStencil(stencil) {
+    if (!stencil) return;
+    const { stencilFunc, stencilMask, stencilRef, stencilPass } = stencil;
+    this.stencil = {
+      stencilFunc,
+      stencilMask,
+      stencilRef,
+      stencilPass,
+    };
   }
   processResources(gl) {
     const { program, resources = {} } = this;
@@ -452,9 +465,10 @@ class Mesh extends Object3D {
 
 class WebGLRenderer {
   constructor(config) {
-    const { canvas } = config;
+    const { canvas, autoClear = true, antialias = true } = config;
     this.canvas = config.canvas;
-    const gl = canvas.getContext('webgl');
+    this.autoClear = !!autoClear;
+    const gl = canvas.getContext('webgl', { antialias: !!antialias });
     this.gl = gl;
     if (!gl) {
       throw new Error('WebGL not supported');
@@ -476,7 +490,7 @@ class WebGLRenderer {
   setDepthTestVisible(value) {
     this.depthTest = !!value;
   }
-  renderStart() {
+  clear() {
     const { gl, canvas, scissor, depthTest } = this;
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
@@ -499,10 +513,10 @@ class WebGLRenderer {
     } else {
       gl.disable(gl.SCISSOR_TEST);
     }
+
     // 开启深度测试
     if (depthTest) {
       gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LEQUAL);
     } else {
       gl.disable(gl.DEPTH_TEST);
     }
@@ -513,7 +527,23 @@ class WebGLRenderer {
       - gl.DEPTH_BUFFER_BIT //深度缓冲区
       - gl.STENCIL_BUFFER_BIT //模板缓冲区
     */
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+  }
+  startStencilTest(config) {
+    if (!config) return;
+    const gl = this.gl;
+    gl.enable(gl.STENCIL_TEST);
+    gl.enable(gl.DEPTH_TEST);
+    // 保证深度测试成功总是通过
+    gl.depthFunc(gl.ALWAYS);
+    // 模板测试
+    // 是否写入模版缓存值
+    // gl.stencilMask(config.stencilMask);
+    // 测试通过后使用stencilRef替换模板值
+    gl.stencilFunc(config.stencilFunc, config.stencilRef, 0xff);
+    // 设置模板、深度测试通过失败、通过、都通过时分别采取的动作
+    // gl.REPLACE表示使用测试条件中的设定值来代替当前模板值，stencilFunc方法中的ref参数
+    gl.stencilOp(gl.KEEP, gl.KEEP, config.stencilPass);
   }
   renderScene(data, camera) {
     const { gl } = this;
@@ -523,13 +553,15 @@ class WebGLRenderer {
     for (const mesh of list) {
       mesh.render(gl, { viewMatrix, projectionMatrix });
       const vertexCount = mesh.geometry.vertexCount;
+      // 处理每个mesh的模板缓存逻辑
+      this.startStencilTest(mesh.shader.stencil);
       mesh.isDrawElements
         ? this.drawElements(vertexCount)
         : this.drawArrays(vertexCount);
     }
   }
   render(data, camera) {
-    this.renderStart();
+    this.autoClear && this.clear();
     this.renderScene(data, camera);
   }
 }
