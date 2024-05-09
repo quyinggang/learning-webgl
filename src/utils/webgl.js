@@ -515,11 +515,7 @@ class WebGLRenderer {
     }
 
     // 开启深度测试
-    if (depthTest) {
-      gl.enable(gl.DEPTH_TEST);
-    } else {
-      gl.disable(gl.DEPTH_TEST);
-    }
+    depthTest ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST);
 
     /*
       使用预设值来清空缓冲，值可能是：
@@ -531,7 +527,7 @@ class WebGLRenderer {
   }
   startStencilTest(config) {
     if (!config) return;
-    const gl = this.gl;
+    const { gl, depthTest } = this;
     gl.enable(gl.STENCIL_TEST);
     gl.enable(gl.DEPTH_TEST);
     // 保证深度测试成功总是通过
@@ -544,6 +540,7 @@ class WebGLRenderer {
     // 设置模板、深度测试通过失败、通过、都通过时分别采取的动作
     // gl.REPLACE表示使用测试条件中的设定值来代替当前模板值，stencilFunc方法中的ref参数
     gl.stencilOp(gl.KEEP, gl.KEEP, config.stencilPass);
+    depthTest ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST);
   }
   renderScene(data, camera) {
     const { gl } = this;
