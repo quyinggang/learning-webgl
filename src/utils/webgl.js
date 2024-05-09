@@ -1,11 +1,12 @@
 import { mat4 } from 'gl-matrix';
-import { toRadian, isPowerOf2 } from './index';
+import { toRadian, isPowerOf2, hasOwnProperty } from './index';
 
 const alias = {
   texture: 'texture',
   cubeTexture: 'cubeTexture',
-  f3v: 'f3v',
   normal: 'normalMatrix',
+  f3v: 'f3v',
+  f4v: 'f4v',
 };
 
 class Vector3 {
@@ -217,20 +218,51 @@ class Shader {
     this.vertexSource = config.vertex;
     this.fragmentSource = config.fragment;
     this.resources = config.resources;
-    this.processStencil(config.stencil);
+    this.depthTest = config.depthTest || {};
+    this.stencilTest = config.stencilTest || {};
+    this.blend = config.blend || {};
   }
   init(gl) {
     this.program = this.createProgram(gl);
     this.processResources(gl);
+    this.processStencil(gl);
+    this.processDepth(gl);
+    this.processBlend();
   }
-  processStencil(stencil) {
-    if (!stencil) return;
-    const { stencilFunc, stencilMask, stencilRef, stencilPass } = stencil;
-    this.stencil = {
-      stencilFunc,
-      stencilMask,
-      stencilRef,
-      stencilPass,
+  processStencil(gl) {
+    const config = this.stencilTest;
+    this.stencilTest = {
+      enable: hasOwnProperty(config, 'enable') ? !!config.enable : false,
+      stencilFunc: hasOwnProperty(config, 'stencilFunc')
+        ? config.stencilFunc
+        : gl.ALWAYS,
+      stencilMask: hasOwnProperty(config, 'stencilMask')
+        ? config.stencilMask
+        : 0xff,
+      stencilRef: hasOwnProperty(config, 'stencilRef')
+        ? config.stencilRef
+        : 0x00,
+      stencilPass: hasOwnProperty(config, 'stencilPass')
+        ? config.stencilPass
+        : gl.KEEP,
+    };
+  }
+  processDepth(gl) {
+    const config = this.depthTest;
+    this.depthTest = {
+      enable: hasOwnProperty(config, 'enable') ? !!config.enable : true,
+      depthWrite: hasOwnProperty(config, 'depthWrite')
+        ? !!config.depthWrite
+        : true,
+      depthFunc: hasOwnProperty(config, 'depthFunc')
+        ? config.depthFunc
+        : gl.LESS,
+    };
+  }
+  processBlend() {
+    const config = this.blend;
+    this.blend = {
+      enable: hasOwnProperty(config, 'enable') ? !!config.enable : false,
     };
   }
   processResources(gl) {
@@ -444,8 +476,10 @@ class Mesh extends Object3D {
         gl.uniformMatrix4fv(item.location, false, normalMatrix);
       },
       [alias.f3v]: (item) => {
-        const value = item.value;
-        gl.uniform3fv(item.location, value);
+        gl.uniform3fv(item.location, item.value);
+      },
+      [alias.f4v]: (item) => {
+        gl.uniform4fv(item.location, item.value);
       },
       [alias.cubeTexture]: (item) => {
         gl.activeTexture(gl.TEXTURE0);
@@ -475,6 +509,7 @@ class WebGLRenderer {
     }
     this.scissor = null;
     this.depthTest = true;
+    this.stencilTest = false;
   }
   drawElements(vertexCount) {
     const gl = this.gl;
@@ -487,11 +522,14 @@ class WebGLRenderer {
   setScissor(x, y, width, height) {
     this.scissor = new Vector4(x, y, width, height);
   }
-  setDepthTestVisible(value) {
+  setDepthTest(value) {
     this.depthTest = !!value;
   }
+  setStencilTest(value) {
+    this.stencilTest = !!value;
+  }
   clear() {
-    const { gl, canvas, scissor, depthTest } = this;
+    const { gl, canvas, scissor } = this;
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
@@ -513,10 +551,6 @@ class WebGLRenderer {
     } else {
       gl.disable(gl.SCISSOR_TEST);
     }
-
-    // 开启深度测试
-    depthTest ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST);
-
     /*
       使用预设值来清空缓冲，值可能是：
       - gl.COLOR_BUFFER_BIT //颜色缓冲区
@@ -526,21 +560,40 @@ class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
   }
   startStencilTest(config) {
-    if (!config) return;
-    const { gl, depthTest } = this;
+    const { gl } = this;
+    if (!config || !config.enable) {
+      gl.disable(gl.STENCIL_TEST);
+      return;
+    }
     gl.enable(gl.STENCIL_TEST);
-    gl.enable(gl.DEPTH_TEST);
-    // 保证深度测试成功总是通过
-    gl.depthFunc(gl.ALWAYS);
-    // 模板测试
+    // 因为深度测试可能会影响模板测试的结果，需要关闭深度测试
+    gl.disable(gl.DEPTH_TEST);
     // 是否写入模版缓存值
-    // gl.stencilMask(config.stencilMask);
+    gl.stencilMask(config.stencilMask);
     // 测试通过后使用stencilRef替换模板值
     gl.stencilFunc(config.stencilFunc, config.stencilRef, 0xff);
     // 设置模板、深度测试通过失败、通过、都通过时分别采取的动作
     // gl.REPLACE表示使用测试条件中的设定值来代替当前模板值，stencilFunc方法中的ref参数
     gl.stencilOp(gl.KEEP, gl.KEEP, config.stencilPass);
-    depthTest ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST);
+  }
+  startDepthTest(config) {
+    const { gl, depthTest } = this;
+    if (!depthTest || !config || !config.enable) {
+      gl.disable(gl.DEPTH_TEST);
+      return;
+    }
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(config.depthFunc);
+    gl.depthMask(config.depthWrite);
+  }
+  startBlend(config) {
+    const gl = this.gl;
+    if (!config || !config.enable) {
+      gl.disable(gl.BLEND);
+      return;
+    }
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
   renderScene(data, camera) {
     const { gl } = this;
@@ -548,10 +601,15 @@ class WebGLRenderer {
 
     const list = Array.isArray(data) ? data : [data];
     for (const mesh of list) {
+      const { geometry, shader } = mesh;
       mesh.render(gl, { viewMatrix, projectionMatrix });
-      const vertexCount = mesh.geometry.vertexCount;
-      // 处理每个mesh的模板缓存逻辑
-      this.startStencilTest(mesh.shader.stencil);
+      const vertexCount = geometry.vertexCount;
+      // 处理每个mesh的模板测试逻辑
+      this.startStencilTest(shader.stencilTest);
+      // 处理每个mesh的深度测试配置
+      this.startDepthTest(shader.depthTest);
+      // 应用混合逻辑
+      this.startBlend(shader.blend);
       mesh.isDrawElements
         ? this.drawElements(vertexCount)
         : this.drawArrays(vertexCount);

@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted } from 'vue';
 import { createCanvas } from '@/utils';
 import {
   WebGLRenderer,
@@ -27,7 +27,7 @@ const createAndMountCanvas = () => {
 };
 
 const createMesh = (gl, config) => {
-  const { color, stencil } = config;
+  const { color, depthTest, blend } = config;
   const geometry = new Geometry();
   const positions = new Float32Array([
     // Front face
@@ -80,15 +80,16 @@ const createMesh = (gl, config) => {
       `,
       fragment: `
         precision mediump float;
-        uniform vec3 uColor;
+        uniform vec4 uColor;
         void main() {
-          gl_FragColor = vec4(uColor, 1.0);
+          gl_FragColor = uColor;
         }
       `,
       resources: {
-        uColor: { type: 'f3v', value: color },
+        uColor: { type: 'f4v', value: color },
       },
-      stencilTest: { ...stencil },
+      depthTest: { ...depthTest },
+      blend: { ...blend },
     }),
   });
 
@@ -98,36 +99,29 @@ const createMesh = (gl, config) => {
 };
 
 onMounted(() => {
-  let raf = null;
   const { canvas } = createAndMountCanvas();
-  const renderer = new WebGLRenderer({ canvas, autoClear: false });
+  const renderer = new WebGLRenderer({ canvas });
   const gl = renderer.gl;
 
   const mesh = createMesh(gl, {
-    color: [0.6, 0.0, 0.8],
-    stencil: {
+    color: [0.6, 0.0, 0.8, 0.1],
+    depthTest: {
+      depthWrite: false,
+    },
+    blend: {
       enable: true,
-      stencilMask: 0xff,
-      stencilFunc: gl.ALWAYS,
-      stencilRef: 1,
-      stencilPass: gl.REPLACE,
     },
   });
   mesh.position.set(0, 0, -6.0);
 
   const mesh1 = createMesh(gl, {
-    color: [1.0, 1.0, 1.0],
-    stencil: {
-      enable: true,
-      stencilMask: 0xff,
-      stencilFunc: gl.EQUAL,
-      stencilRef: 0,
-      stencilPass: gl.KEEP,
+    color: [1.0, 1.0, 1.0, 1.0],
+    depthTest: {
+      depthWrite: true,
     },
   });
-  mesh1.position.set(0, 0, -6.0);
+  mesh1.position.set(1.0, 0, -8.0);
 
-  const target = mesh.position.toArray();
   const aspect = canvas.clientWidth / canvas.clientHeight;
   const camera = new PerspectiveCamera({
     fov: 45,
@@ -135,24 +129,17 @@ onMounted(() => {
     near: 0.1,
     far: 1000,
   });
-  camera.position.set(0, 6, 6);
-  camera.lookAt(target[0], target[1], target[2]);
+  camera.position.set(0, 0, 6);
   camera.computeViewMatrix();
 
-  const animate = () => {
-    renderer.clear();
-    mesh.rotateY(mesh.rotation.y + 0.01);
-    renderer.render(mesh, camera);
-
-    // 实现轮廓的原理是第二次绘制的图形大小比第一次绘制的图形小，并且模板值不同于第一次绘制的模版值，从而实现片元颜色更改
-    mesh1.rotateY(mesh.rotation.y);
-    mesh1.scale.set(0.92, 0.92, 0.92);
-    renderer.render(mesh1, camera);
-    raf = window.requestAnimationFrame(animate);
-  };
-
-  animate();
-
-  onBeforeUnmount(() => window.cancelAnimationFrame(raf));
+  /**
+   * 使用颜色的alpha实现的半透明物体生效需要：
+   * - 开启混合
+   * - 场景中共存透明和非透明物体，深度值决定了物体遮挡关系，所以绘制需要考虑绘制顺序
+   *   - 首先绘制不透明物体
+   *   - 然后绘制透明物体，关闭深度写入，这样才会可以看到透明物体背后的物体，否则的话重新写入深度就导致后面的物体被遮挡
+   */
+  // mesh半透明，并且mesh深度 < mesh1的
+  renderer.render([mesh1, mesh], camera);
 });
 </script>

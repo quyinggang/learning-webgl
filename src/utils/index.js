@@ -66,3 +66,7 @@ export const isPowerOf2 = (value) => {
 export const toRadian = (angle) => {
   return (angle * Math.PI) / 180;
 };
+
+export const hasOwnProperty = (object, attr) => {
+  return Object.prototype.hasOwnProperty.call(object, attr);
+};

@@ -79,4 +79,9 @@ export default [
     title: '深度测试',
     componentName: 'DepthTest',
   },
+  {
+    path: '/blend',
+    title: '半透明物体',
+    componentName: 'AlphaBlend',
+  },
 ];

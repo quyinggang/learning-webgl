@@ -89,10 +89,10 @@ onMounted(() => {
   const renderer = new WebGLRenderer({ canvas });
 
   const mesh = createMesh(renderer.gl, [0.6, 0.0, 0.8]);
-  mesh.position.set(-0.5, 0, -6.0);
+  mesh.position.set(-0.5, 0, -4.0);
 
   const mesh2 = createMesh(renderer.gl, [0.3, 0.7, 0.5]);
-  mesh2.position.set(0.5, 0, -4.0);
+  mesh2.position.set(0.5, 0, -6.0);
 
   const aspect = canvas.clientWidth / canvas.clientHeight;
   const camera = new PerspectiveCamera({
@@ -108,9 +108,9 @@ onMounted(() => {
   gui.open();
 
   watchEffect(() => {
-    // 深度测试决定了物体的遮挡关系
-    renderer.setDepthTestVisible(depthVisible.value);
-    renderer.render([mesh2, mesh], camera);
+    renderer.setDepthTest(depthVisible.value);
+    // 深度测试决定了物体的遮挡关系，mesh的深度 < mesh2的
+    renderer.render([mesh, mesh2], camera);
   });
 
   onBeforeUnmount(() => gui.destroy());
