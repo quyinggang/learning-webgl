@@ -12,6 +12,7 @@ import {
   Shader,
   BufferAttribute,
   PerspectiveCamera,
+  Texture,
 } from '@/utils/webgl';
 import GMVideo from '@/assets/gm.mp4';
 
@@ -77,7 +78,7 @@ const createCanvasSource = () => {
   return canvas;
 };
 
-const createMesh = (gl, source) => {
+const createMesh = (gl, texture) => {
   const geometry = new Geometry();
   const positions = new Float32Array([
     -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0,
@@ -122,7 +123,7 @@ const createMesh = (gl, source) => {
        * - HTMLCanvasElement
        */
       resources: {
-        uTexture: { type: 'texture', value: source },
+        uTexture: { type: 'texture', value: texture },
       },
     }),
   });
@@ -138,11 +139,13 @@ onMounted(() => {
   const renderer = new WebGLRenderer({ canvas });
 
   createVideo().then((video) => {
-    const mesh = createMesh(renderer.gl, video);
+    const videoTexture = new Texture({ resource: video, frameUpdate: true });
+    const mesh = createMesh(renderer.gl, videoTexture);
     mesh.position.set(-1.5, 0.5, -2.0);
 
     const canvasSource = createCanvasSource();
-    const mesh2 = createMesh(renderer.gl, canvasSource);
+    const canvasTexture = new Texture({ resource: canvasSource });
+    const mesh2 = createMesh(renderer.gl, canvasTexture);
     mesh2.position.set(1.5, 0.5, -2.0);
 
     const aspect = canvas.clientWidth / canvas.clientHeight;

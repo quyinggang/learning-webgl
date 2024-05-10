@@ -84,4 +84,9 @@ export default [
     title: '半透明物体',
     componentName: 'AlphaBlend',
   },
+  {
+    path: '/renderTexture',
+    title: '渲染到纹理',
+    componentName: 'RenderTexture',
+  },
 ];

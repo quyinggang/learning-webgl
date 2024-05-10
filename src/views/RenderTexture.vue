@@ -12,7 +12,6 @@ import {
   Shader,
   BufferAttribute,
   PerspectiveCamera,
-  CubeTexture,
 } from '@/utils/webgl';
 
 const boxElementRef = ref(null);
@@ -27,21 +26,8 @@ const createAndMountCanvas = () => {
   return { canvas: canvasElement, bounds: boundingRect };
 };
 
-const createCanvasSource = (text) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.rect(0, 0, 256, 256);
-  ctx.fill();
-  ctx.font = '60px serif';
-  ctx.fillStyle = '#000';
-  ctx.fillText(text, 100, 100);
-  return canvas;
-};
-
-const createMesh = (gl, images) => {
+const createMesh = (gl, config) => {
+  const { color } = config;
   const geometry = new Geometry();
   const positions = new Float32Array([
     // Front face
@@ -88,22 +74,19 @@ const createMesh = (gl, images) => {
         uniform mat4 uModelMatrix;
         uniform mat4 uViewMatrix;
         uniform mat4 uProjectionMatrix;
-        varying vec3 vNormal;
         void main() {
           gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
-          vNormal = normalize(aPosition.xyz);
         }
       `,
       fragment: `
         precision mediump float;
-        uniform samplerCube uTexture;
-        varying vec3 vNormal;
+        uniform vec3 uColor;
         void main() {
-          gl_FragColor = textureCube(uTexture, normalize(vNormal));
+          gl_FragColor = vec4(uColor, 1.0);
         }
       `,
       resources: {
-        uTexture: { type: 'cubeTexture', value: new CubeTexture(images) },
+        uColor: { type: 'f3v', value: color },
       },
     }),
   });
@@ -113,18 +96,69 @@ const createMesh = (gl, images) => {
   return mesh;
 };
 
+// const createPlane = (gl, source) => {
+//   const geometry = new Geometry();
+//   const positions = new Float32Array([
+//     -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0,
+//   ]);
+//   const indices = new Uint16Array([0, 1, 2, 2, 3, 0]);
+
+//   // 纹理坐标是0.0 ～ 1.0范围的，定义uvs需要与顶点一一对应
+//   const uvs = new Float32Array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0]);
+//   geometry.setAttribute('aPosition', new BufferAttribute(positions, 2));
+//   geometry.setAttribute('aUV', new BufferAttribute(uvs, 2));
+//   geometry.setIndex(indices);
+
+//   const mesh = new Mesh({
+//     geometry,
+//     shader: new Shader({
+//       vertex: `
+//         precision mediump float;
+//         attribute vec3 aPosition;
+//         attribute vec2 aUV;
+//         uniform mat4 uModelMatrix;
+//         uniform mat4 uViewMatrix;
+//         uniform mat4 uProjectionMatrix;
+//         varying vec2 vUV;
+//         void main() {
+//           vUV = aUV;
+//           gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aPosition, 1.0);
+//         }
+//       `,
+//       fragment: `
+//         precision mediump float;
+//         uniform sampler2D uTexture;
+//         varying vec2 vUV;
+//         void main() {
+//           gl_FragColor = texture2D(uTexture, vUV);
+//         }
+//       `,
+//       resources: {
+//         uTexture: { type: 'texture', value: source },
+//       },
+//     }),
+//   });
+
+//   mesh.init(gl);
+
+//   return mesh;
+// };
+
 onMounted(() => {
   let raf = null;
   const { canvas } = createAndMountCanvas();
   const renderer = new WebGLRenderer({ canvas });
+  const gl = renderer.gl;
 
-  // 立方体贴图要求图片的宽高一致，否则会报错
-  const texts = ['上', '下', '左', '右', '前', '后'];
-  const mesh = createMesh(
-    renderer.gl,
-    texts.map((text) => createCanvasSource(text))
-  );
-  mesh.position.set(0, 0, -6.0);
+  const mesh = createMesh(gl, {
+    color: [0.6, 0.0, 0.8],
+  });
+  mesh.position.set(-1.0, 0, -6.0);
+
+  const mesh1 = createMesh(gl, {
+    color: [0.3, 0.5, 0.6],
+  });
+  mesh1.position.set(3.0, 0.0, -8.0);
 
   const target = mesh.position.toArray();
   const aspect = canvas.clientWidth / canvas.clientHeight;
@@ -140,7 +174,8 @@ onMounted(() => {
 
   const animate = () => {
     mesh.rotateY(mesh.rotation.y + 0.01);
-    renderer.render(mesh, camera);
+    mesh1.rotateX(mesh1.rotation.x + 0.01);
+    renderer.render([mesh, mesh1], camera);
     raf = window.requestAnimationFrame(animate);
   };
 

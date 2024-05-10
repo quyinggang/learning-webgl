@@ -1,5 +1,4 @@
 import { mat4 } from 'gl-matrix';
-import { toRadian, isPowerOf2, hasOwnProperty } from './index';
 
 const alias = {
   texture: 'texture',
@@ -7,6 +6,37 @@ const alias = {
   normal: 'normalMatrix',
   f3v: 'f3v',
   f4v: 'f4v',
+  imageSource: 'image',
+  canvasSource: 'canvas',
+  videoSource: 'video',
+};
+
+const checkIsVideoTextureSource = (source) => {
+  return source instanceof HTMLVideoElement;
+};
+const checkIsCanvasTextureSource = (source) => {
+  return source instanceof HTMLCanvasElement;
+};
+const checkIsImageTextureSource = (source) => {
+  return source instanceof HTMLImageElement;
+};
+const checkIsLegalTextureSource = (source) => {
+  return (
+    checkIsImageTextureSource(source) ||
+    checkIsCanvasTextureSource(source) ||
+    checkIsVideoTextureSource(source)
+  );
+};
+const isPowerOf2 = (value) => {
+  return (value & (value - 1)) === 0;
+};
+
+const toRadian = (angle) => {
+  return (angle * Math.PI) / 180;
+};
+
+const hasOwnProperty = (object, attr) => {
+  return Object.prototype.hasOwnProperty.call(object, attr);
 };
 
 class Vector3 {
@@ -142,6 +172,134 @@ class PerspectiveCamera extends Camera {
   }
 }
 
+class Texture {
+  constructor(config) {
+    const { resource = null, width = 0, height = 0, frameUpdate } = config;
+    const isLegalResource = resource
+      ? checkIsLegalTextureSource(resource)
+      : width && height;
+    if (!isLegalResource) {
+      throw new Error(
+        'texture resource must be canvas、image、video or resource is null but need width and height'
+      );
+    }
+    const isExistResource = !!resource;
+    this.width = isExistResource ? resource.width : width;
+    this.height = isExistResource ? resource.height : height;
+    this.resource = isExistResource ? resource : null;
+    this.frameUpdate = !!frameUpdate;
+  }
+  init(gl) {
+    this.source = this.resource
+      ? this.createTextureFromSource(gl)
+      : this.createNullDataTexture(gl);
+  }
+  updateTexture(gl) {
+    const { source, resource } = this;
+    if (!source || !resource) return;
+    gl.bindTexture(gl.TEXTURE_2D, source);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      resource
+    );
+  }
+  createNullDataTexture(gl) {
+    const { width, height } = this;
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null
+    );
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+    return texture;
+  }
+  createTextureFromSource(gl) {
+    const resource = this.resource;
+    // 创建WebGL纹理对象
+    const texture = gl.createTexture();
+    // 绑定给定的纹理到目标
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    // 指定纹理的数据源
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      resource
+    );
+    const isVideoSource = checkIsVideoTextureSource(resource);
+    // 对于宽高两个维度上是否为2的幂来设置纹理的过滤（filter）和平铺（wrap）
+    const isPower2Image =
+      isPowerOf2(resource.width) && isPowerOf2(resource.height);
+    // 视频纹理不能生成Mipmap
+    if (isPower2Image && !isVideoSource) {
+      gl.generateMipmap(gl.TEXTURE_2D);
+    } else {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    }
+
+    return texture;
+  }
+}
+
+class CubeTexture {
+  constructor(resources) {
+    const isLegalResource = Array.isArray(resources) && resources.length === 6;
+    if (!isLegalResource) {
+      throw new Error('cube texture resource must be a array and length is 6');
+    }
+    this.resources = resources;
+  }
+  init(gl) {
+    this.source = this.createCubeTextureFromSource(gl);
+  }
+  createCubeTextureFromSource(gl) {
+    const resources = this.resources;
+    // 创建WebGL纹理对象
+    const texture = gl.createTexture();
+    // 绑定给定的纹理到目标
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
+    // 上下左右前后顺序
+    const types = [
+      gl.TEXTURE_CUBE_MAP_POSITIVE_Y,
+      gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
+      gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
+      gl.TEXTURE_CUBE_MAP_POSITIVE_X,
+      gl.TEXTURE_CUBE_MAP_POSITIVE_Z,
+      gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
+    ];
+    for (let index = 0, len = types.length; index < len; index++) {
+      const type = types[index];
+      const source = resources[index];
+      gl.texImage2D(type, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    }
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
+  }
+}
+
 class Geometry {
   constructor() {
     this.attributes = {};
@@ -270,20 +428,24 @@ class Shader {
     const customUniforms = {};
     const callbackMap = {
       [alias.texture]: (value) => {
-        const result = {};
-        const isVideoSource = value instanceof HTMLVideoElement;
-        const texture = this.createTexture(gl, value);
-        result.value = texture;
-        if (isVideoSource) {
-          result.video = value;
+        const isTexture = value instanceof Texture;
+        if (!isTexture) {
+          throw new Error(
+            'Shader Resources Texture must be a Texture Instance'
+          );
         }
-        return result;
+        value.init(gl);
+        return { value };
       },
       [alias.cubeTexture]: (value) => {
-        const result = {};
-        const texture = this.createCubeTexture(gl, value);
-        result.value = texture;
-        return result;
+        const isTexture = value instanceof CubeTexture;
+        if (!isTexture) {
+          throw new Error(
+            'Shader Resources CubeTexture must be a CubeTexture Instance'
+          );
+        }
+        value.init(gl);
+        return { value };
       },
     };
     for (const [attr, data] of Object.entries(resources)) {
@@ -298,52 +460,6 @@ class Shader {
       };
     }
     this.uniformsInfo = customUniforms;
-  }
-  createTexture(gl, source) {
-    // 创建WebGL纹理对象
-    const texture = gl.createTexture();
-    // 绑定给定的纹理到目标
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    // 指定纹理的数据源
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    const isVideoSource = source instanceof HTMLVideoElement;
-    // 对于宽高两个维度上是否为2的幂来设置纹理的过滤（filter）和平铺（wrap）
-    const isPower2Image = isPowerOf2(source.width) && isPowerOf2(source.height);
-    // 视频纹理不能生成Mipmap
-    if (isPower2Image && !isVideoSource) {
-      gl.generateMipmap(gl.TEXTURE_2D);
-    } else {
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    }
-
-    return texture;
-  }
-  createCubeTexture(gl, sources) {
-    // 创建WebGL纹理对象
-    const texture = gl.createTexture();
-    // 绑定给定的纹理到目标
-    gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
-    // 上下左右前后顺序
-    const types = [
-      gl.TEXTURE_CUBE_MAP_POSITIVE_Y,
-      gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
-      gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
-      gl.TEXTURE_CUBE_MAP_POSITIVE_X,
-      gl.TEXTURE_CUBE_MAP_POSITIVE_Z,
-      gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
-    ];
-    for (let index = 0, len = types.length; index < len; index++) {
-      const type = types[index];
-      const source = sources[index];
-      gl.texImage2D(type, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    }
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    return texture;
   }
   updateVideoTexture(gl, texture, video) {
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -460,15 +576,15 @@ class Mesh extends Object3D {
 
     const callbackMap = {
       [alias.texture]: (item) => {
+        const texture = item.value;
         // 应用多个纹理时需要设置不同的纹理单元
         gl.activeTexture(gl.TEXTURE0 + textureIndex);
-        gl.bindTexture(gl.TEXTURE_2D, item.value);
+        gl.bindTexture(gl.TEXTURE_2D, texture.source);
         gl.uniform1i(item.location, textureIndex);
         textureIndex += 1;
-
         // 视频作为纹理来源需要在每一帧动态更新纹理内容才能实现播放
-        if (item.video) {
-          shader.updateVideoTexture(gl, item.value, item.video);
+        if (texture.frameUpdate) {
+          texture.updateTexture(gl);
         }
       },
       [alias.normal]: (item) => {
@@ -634,4 +750,6 @@ export {
   Geometry,
   WebGLRenderer,
   Object3D,
+  Texture,
+  CubeTexture,
 };

@@ -12,6 +12,7 @@ import {
   Shader,
   BufferAttribute,
   PerspectiveCamera,
+  Texture,
 } from '@/utils/webgl';
 import GMImage from '@/assets/gm.jpg';
 import LEImage from '@/assets/gmlei.png';
@@ -110,8 +111,14 @@ const createMesh = (gl, data) => {
         }
       `,
       resources: {
-        uTexture1: { type: 'texture', value: data[0] },
-        uTexture2: { type: 'texture', value: data[1] },
+        uTexture1: {
+          type: 'texture',
+          value: new Texture({ resource: data[0] }),
+        },
+        uTexture2: {
+          type: 'texture',
+          value: new Texture({ resource: data[1] }),
+        },
       },
     }),
   });

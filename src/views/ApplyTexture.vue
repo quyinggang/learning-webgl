@@ -13,6 +13,7 @@ import {
   Shader,
   BufferAttribute,
   PerspectiveCamera,
+  Texture,
 } from '@/utils/webgl';
 
 const boxElementRef = ref(null);
@@ -107,7 +108,7 @@ const createMesh = (gl, image) => {
         }
       `,
       resources: {
-        uTexture: { type: 'texture', value: image },
+        uTexture: { type: 'texture', value: new Texture({ resource: image }) },
       },
     }),
   });

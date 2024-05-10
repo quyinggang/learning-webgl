@@ -58,15 +58,3 @@ export const createCanvas = (width, height) => {
 
   return canvas;
 };
-
-export const isPowerOf2 = (value) => {
-  return (value & (value - 1)) === 0;
-};
-
-export const toRadian = (angle) => {
-  return (angle * Math.PI) / 180;
-};
-
-export const hasOwnProperty = (object, attr) => {
-  return Object.prototype.hasOwnProperty.call(object, attr);
-};
