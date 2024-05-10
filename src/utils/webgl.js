@@ -568,7 +568,7 @@ class WebGLRenderer {
     gl.enable(gl.STENCIL_TEST);
     // 因为深度测试可能会影响模板测试的结果，需要关闭深度测试
     gl.disable(gl.DEPTH_TEST);
-    // 是否写入模版缓存值
+    // 控制是否写入模板缓存
     gl.stencilMask(config.stencilMask);
     // 测试通过后使用stencilRef替换模板值
     gl.stencilFunc(config.stencilFunc, config.stencilRef, 0xff);
@@ -604,10 +604,15 @@ class WebGLRenderer {
       const { geometry, shader } = mesh;
       mesh.render(gl, { viewMatrix, projectionMatrix });
       const vertexCount = geometry.vertexCount;
-      // 处理每个mesh的模板测试逻辑
-      this.startStencilTest(shader.stencilTest);
+      /**
+       * 模板测试和深度测试的应用，需要根据具体的场景应用
+       * - 图形渲染管线过程中模板测试是在深度测试之前进行
+       * - 有些场景应用下，模板测试需要在深度测试之后应用
+       */
       // 处理每个mesh的深度测试配置
       this.startDepthTest(shader.depthTest);
+      // 处理每个mesh的模板测试逻辑
+      this.startStencilTest(shader.stencilTest);
       // 应用混合逻辑
       this.startBlend(shader.blend);
       mesh.isDrawElements

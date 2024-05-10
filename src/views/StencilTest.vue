@@ -120,9 +120,9 @@ onMounted(() => {
     stencil: {
       enable: true,
       stencilMask: 0xff,
-      stencilFunc: gl.EQUAL,
+      stencilFunc: gl.ALWAYS,
       stencilRef: 0,
-      stencilPass: gl.KEEP,
+      stencilPass: gl.REPLACE,
     },
   });
   mesh1.position.set(0, 0, -6.0);
@@ -142,9 +142,10 @@ onMounted(() => {
   const animate = () => {
     renderer.clear();
     mesh.rotateY(mesh.rotation.y + 0.01);
+    // 绘制轮廓，绘制区域深度值为1
     renderer.render(mesh, camera);
 
-    // 实现轮廓的原理是第二次绘制的图形大小比第一次绘制的图形小，并且模板值不同于第一次绘制的模版值，从而实现片元颜色更改
+    // 绘制物体，绘制区域深度值设置为0，从而实现模板缓冲中相关区域边缘为1内部为0
     mesh1.rotateY(mesh.rotation.y);
     mesh1.scale.set(0.92, 0.92, 0.92);
     renderer.render(mesh1, camera);
