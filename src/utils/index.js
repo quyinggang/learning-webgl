@@ -58,3 +58,7 @@ export const createCanvas = (width, height) => {
 
   return canvas;
 };
+
+export const degToRadian = (angle) => {
+  return (angle * Math.PI) / 180;
+};

@@ -1,4 +1,5 @@
 import { mat4 } from 'gl-matrix';
+import { degToRadian } from './index';
 
 const alias = {
   texture: 'texture',
@@ -29,10 +30,6 @@ const checkIsLegalTextureSource = (source) => {
 };
 const isPowerOf2 = (value) => {
   return (value & (value - 1)) === 0;
-};
-
-const toRadian = (angle) => {
-  return (angle * Math.PI) / 180;
 };
 
 const hasOwnProperty = (object, attr) => {
@@ -133,7 +130,7 @@ class Object3D {
 
 class Camera {
   constructor(config) {
-    this.fov = toRadian(config.fov);
+    this.fov = degToRadian(config.fov);
     this.aspect = config.aspect;
     this.near = config.near;
     this.far = config.far;
@@ -145,6 +142,9 @@ class Camera {
   }
   lookAt(x, y, z) {
     this.lookAtTarget.set(x, y, z);
+  }
+  setAspect(value) {
+    this.aspect = value;
   }
   computeViewMatrix() {
     const { position, lookAtTarget, up } = this;
@@ -188,11 +188,14 @@ class Texture {
     this.height = isExistResource ? resource.height : height;
     this.resource = isExistResource ? resource : null;
     this.frameUpdate = !!frameUpdate;
+    this.initial = false;
   }
   init(gl) {
+    if (this.initial) return;
     this.source = this.resource
       ? this.createTextureFromSource(gl)
       : this.createNullDataTexture(gl);
+    this.initial = true;
   }
   updateTexture(gl) {
     const { source, resource } = this;
@@ -461,10 +464,6 @@ class Shader {
     }
     this.uniformsInfo = customUniforms;
   }
-  updateVideoTexture(gl, texture, video) {
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-  }
   createProgram(gl) {
     const { vertexSource, fragmentSource } = this;
     const vertexShader = this.createShader(gl, gl.VERTEX_SHADER, vertexSource);
@@ -614,6 +613,74 @@ class Mesh extends Object3D {
   }
 }
 
+class RenderTarget {
+  constructor(width, height) {
+    this.width = width;
+    this.height = height;
+    this.texture = new Texture({ width, height });
+    this.depthStencilBuffer = null;
+    this.frameBuffer = null;
+    this.initial = false;
+  }
+  init(gl) {
+    if (this.initial) return;
+    this.texture.init(gl);
+    this.frameBuffer = this.createFrameBuffer(gl);
+    this.bindFramebufferAndSetViewport(gl);
+    this.depthStencilBuffer = this.createDepthStencilRenderBuffer(gl);
+    this.bindAttachment(gl);
+    const state = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (gl.FRAMEBUFFER_COMPLETE !== state) {
+      this.destroy(gl);
+      throw new Error('Frame buffer object is incomplete: ' + state.toString());
+    }
+    this.initial = true;
+  }
+  destroy(gl) {
+    const { depthBuffer, stencilBuffer, frameBuffer } = this;
+    depthBuffer && gl.deleteRenderbuffer(depthBuffer);
+    stencilBuffer && gl.deleteRenderbuffer(stencilBuffer);
+    frameBuffer && gl.deleteFramebuffer(frameBuffer);
+  }
+  createDepthStencilRenderBuffer(gl) {
+    const { width, height } = this;
+    const renderBuffer = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, renderBuffer);
+    // 创建和初始化一个渲染缓冲区对象的数据存储
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_STENCIL, width, height);
+    return renderBuffer;
+  }
+  createFrameBuffer(gl) {
+    // 创建帧缓冲对象
+    const frameBuffer = gl.createFramebuffer();
+    return frameBuffer;
+  }
+  bindFramebufferAndSetViewport(gl) {
+    // 绑定帧缓冲对象到目标点
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.frameBuffer);
+    // 设置渲染目标的视口大小
+    gl.viewport(0, 0, this.width, this.height);
+  }
+  bindAttachment(gl) {
+    // 将纹理绑定到帧缓冲对象中，作为其颜色关联对象
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      this.texture.source,
+      0
+    );
+    // 将渲染缓冲区绑定到帧缓冲对象上，作为其模板关联对象
+    // 将渲染缓冲区绑定到帧缓冲对象上，作为其深度关联对象
+    gl.framebufferRenderbuffer(
+      gl.FRAMEBUFFER,
+      gl.DEPTH_STENCIL_ATTACHMENT,
+      gl.RENDERBUFFER,
+      this.depthStencilBuffer
+    );
+  }
+}
+
 class WebGLRenderer {
   constructor(config) {
     const { canvas, autoClear = true, antialias = true } = config;
@@ -627,6 +694,8 @@ class WebGLRenderer {
     this.scissor = null;
     this.depthTest = true;
     this.stencilTest = false;
+    this.viewport = new Vector4(0, 0, this.canvas.width, this.canvas.height);
+    this.background = new Vector4(0.0, 0.0, 0.0, 1.0);
   }
   drawElements(vertexCount) {
     const gl = this.gl;
@@ -645,11 +714,29 @@ class WebGLRenderer {
   setStencilTest(value) {
     this.stencilTest = !!value;
   }
+  renderToTarget() {
+    const { viewport, gl, renderTarget } = this;
+    // 渲染目标不存在则默认渲染到屏幕
+    if (renderTarget) {
+      renderTarget.bindFramebufferAndSetViewport(gl);
+    } else {
+      gl.viewport(viewport.x, viewport.y, viewport.z, viewport.w);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+  }
+  setViewport(x, y, width, height) {
+    this.viewport.set(x, y, width, height);
+  }
+  setBackground(r, g, b, a) {
+    this.background.set(r, g, b, a);
+  }
   clear() {
-    const { gl, canvas, scissor } = this;
-    gl.viewport(0, 0, canvas.width, canvas.height);
+    const { gl, background, scissor } = this;
+
+    this.renderToTarget();
+
     // 设置清空颜色缓冲时的颜色值，值的范围是 0 到 1
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clearColor(background.x, background.y, background.z, background.w);
     // 设置深度缓冲区的深度清除值，值的范围是 0 到 1
     gl.clearDepth(1.0);
 
@@ -713,11 +800,16 @@ class WebGLRenderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
   renderScene(data, camera) {
+    if (!data || (Array.isArray(data) && data.length === 0)) return;
     const { gl } = this;
     const { viewMatrix, projectionMatrix } = camera;
 
     const list = Array.isArray(data) ? data : [data];
     for (const mesh of list) {
+      if (!(mesh instanceof Mesh)) {
+        console.warn('Mesh TypeError');
+        break;
+      }
       const { geometry, shader } = mesh;
       mesh.render(gl, { viewMatrix, projectionMatrix });
       const vertexCount = geometry.vertexCount;
@@ -736,6 +828,13 @@ class WebGLRenderer {
         ? this.drawElements(vertexCount)
         : this.drawArrays(vertexCount);
     }
+  }
+  setRenderTarget(target) {
+    // 渲染目标为null表示渲染到屏幕，否则需要提供一个纹理对象表示渲染到纹理
+    const renderTarget =
+      target && target instanceof RenderTarget ? target : null;
+    renderTarget && renderTarget.init(this.gl);
+    this.renderTarget = renderTarget;
   }
   render(data, camera) {
     if (!(camera instanceof Camera)) {
@@ -758,4 +857,5 @@ export {
   Object3D,
   Texture,
   CubeTexture,
+  RenderTarget,
 };

@@ -5,7 +5,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { mat4 } from 'gl-matrix';
-import { createCanvas, toRadian } from '@/utils';
+import { createCanvas, degToRadian } from '@/utils';
 
 const boxElementRef = ref(null);
 
@@ -260,7 +260,7 @@ class Mesh extends Object3D {
 
 class Camera {
   constructor(config) {
-    this.fov = toRadian(config.fov);
+    this.fov = degToRadian(config.fov);
     this.aspect = config.aspect;
     this.near = config.near;
     this.far = config.far;
