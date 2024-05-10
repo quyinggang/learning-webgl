@@ -130,7 +130,6 @@ onMounted(() => {
     far: 1000,
   });
   camera.position.set(0, 0, 6);
-  camera.computeViewMatrix();
 
   /**
    * 使用颜色的alpha实现的半透明物体生效需要：

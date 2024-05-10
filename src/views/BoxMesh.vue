@@ -112,7 +112,6 @@ onMounted(() => {
     far: 1000,
   });
   camera.position.set(0, 0, 6);
-  camera.computeViewMatrix();
 
   const animate = () => {
     mesh.rotateY(mesh.rotation.y + 0.01);

@@ -156,7 +156,6 @@ onMounted(() => {
       far: 1000,
     });
     camera.position.set(0, 0, 3);
-    camera.computeViewMatrix();
 
     const animate = () => {
       renderer.render([mesh, mesh2], camera);

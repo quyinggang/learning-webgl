@@ -527,6 +527,7 @@ class Mesh extends Object3D {
     this.isDrawElements = !!geometry.indexBuffer;
   }
   render(gl, data) {
+    // 模型旋转、平移、缩放发生变更都需要更新模型矩阵
     this.computeModelMatrix();
     gl.useProgram(this.shader.program);
     // 设置shader attributes数据
@@ -737,6 +738,11 @@ class WebGLRenderer {
     }
   }
   render(data, camera) {
+    if (!(camera instanceof Camera)) {
+      throw new Error('Camera TypeError');
+    }
+    // 摄像机位置等信息发生变更需要重新计算视图矩阵
+    camera.computeViewMatrix();
     this.autoClear && this.clear();
     this.renderScene(data, camera);
   }

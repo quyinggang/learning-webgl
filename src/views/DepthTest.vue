@@ -102,7 +102,6 @@ onMounted(() => {
     far: 1000,
   });
   camera.position.set(0, 0, 6);
-  camera.computeViewMatrix();
 
   const gui = createDatGUI();
   gui.open();

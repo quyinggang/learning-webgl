@@ -137,7 +137,6 @@ onMounted(() => {
   });
   camera.position.set(0, 6, 6);
   camera.lookAt(target[0], target[1], target[2]);
-  camera.computeViewMatrix();
 
   const animate = () => {
     renderer.clear();
